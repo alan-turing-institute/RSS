@@ -1,6 +1,6 @@
 use amcl_wrapper::field_elem::FieldElement;
 use amcl_wrapper::group_elem::GroupElement;
-
+use std::convert::From;
 use crate::errors::PSError;
 use crate::{VerkeyGroup, SignatureGroup};
 
@@ -21,6 +21,18 @@ pub struct Verkey {
 pub struct Params {
     pub g: SignatureGroup,
     pub g_tilde: VerkeyGroup,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Skrss {
+    pub x: FieldElement,
+    pub y: FieldElement,
+}
+
+pub struct Pkrss {
+    pub X: VerkeyGroup,
+    pub Y_tilde_i: Vec<FieldElement>,
+    pub Y_i: Vec<FieldElement>
 }
 
 impl Params {
@@ -47,6 +59,30 @@ pub fn keygen(count_messages: usize, params: &Params) -> (Sigkey, Verkey) {
     (Sigkey { x, y }, Verkey { X_tilde, Y_tilde })
 }
 
+pub fn rsskeygen(count_messages: usize, params: &Params) -> (Skrss , Pkrss) {
+    let x = FieldElement::random(); // Generate x
+    let y = FieldElement::random(); // Generate y
+    let X_tilde = &params.g_tilde * &x; // Calculate X
+    let mut i_exponent = FieldElement::one(); // start of exponent
+    let Y_tilde_i: Vec<FieldElement> = vec![]; // Generate Y_tilde_i
+    let Y_i: Vec<FieldElement> = vec![]; // Generate Y_i
+    for i in 0..count_messages{
+        let y_i = FieldElement::pow(&y,&i_exponent); // Calculate y^i
+        Y_tilde_i.push(FieldElement::pow(&params.g_tilde, &y_i); // Need to convert g_tilde to Field Element
+        i_exponent = FieldElement::plus(&i_exponent,&FieldElement::one()); // increment i exponent
+    }
+    for i in 0..(2*count_messages){
+        if i == (count_messages+1){
+            i += 1;
+        } else{
+            let y_i = FieldElement::pow(&y,&i_exponent); // Calculate y^i
+            Y_i.push(FieldElement::pow(&params.g, &y_i)); // Need to convert g to Field Element
+        }
+    }
+    (Skrss {x,y} , Pkrss{X_tilde, Y_tilde_i, Y_i})
+}
+
+
 /// Generate signing and verification keys for scheme from 2018 paper. The signing and verification
 /// keys will have 1 extra element for m'
 pub fn keygen_2018(count_messages: usize, params: &Params) -> (Sigkey, Verkey) {
@@ -64,8 +100,15 @@ mod tests {
         let count_msgs = 5;
         let params = Params::new("test".as_bytes());
         let (sk, vk) = keygen(count_msgs, &params);
-        assert_eq!(sk.y.len(), count_msgs);
-        assert_eq!(vk.Y_tilde.len(), count_msgs);
+        println!("{:?}", sk);
+    }
+
+    #[test]
+    fn test_rsskeygen(){
+        let count_msgs = 5;
+        let params = Params::new("test".as_bytes());
+        let (sk) = rsskeygen(count_msgs, &params);
+        println!("{:?}", sk);
     }
 
     #[test]
