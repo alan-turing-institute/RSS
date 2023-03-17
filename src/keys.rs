@@ -32,7 +32,7 @@ pub struct PKrss {
     pub g_tilde: G1,
     pub Y_j_1_to_n: Vec<G2>,
     pub Y_k_nplus2_to_2n: Vec<G2>,
-    pub X_tilde: G1,
+    pub X_tilde: G2,
     Y_tilde_i: Vec<VerkeyGroup>,
 }
 
@@ -67,42 +67,42 @@ pub fn keygen(count_messages: usize, params: &Params) -> (Sigkey, Verkey) {
     (Sigkey { x, y }, Verkey { X_tilde, Y_tilde })
 }
 
-// pub fn rsskeygen(count_messages: usize, params: &Params) -> (SKrss, PKrss) {
-//     let x = FieldElement::random(); // sample x
-//     let y = FieldElement::random(); // sample y
-//     let g: G2 = params.g.scalar_mul_variable_time(&FieldElement::one());
-//     let g_tilde: G1= params.g_tilde.scalar_mul_variable_time(&FieldElement::one());
-//     let X_tilde:G2 = params.g.scalar_mul_variable_time(&x); // Need exponent, not mul
-//     let mut Y_tilde_i:Vec<VerkeyGroup> = vec![];
-//     let mut i_exponent = FieldElement::one(); // start of exponent
-//     for _ in 0..count_messages{
-//         let y_i=FieldElement::pow(&y,&i_exponent); // Calculate y^i 
-//         let g_tilde_y_i = params.g_tilde.scalar_mul_variable_time(&y_i); // Calculate g_tilde^y^i
-//         Y_tilde_i.push(g_tilde_y_i); // Add g_tilde^y^i to Y_tilde_i
-//         let one = FieldElement::one(); // create counter to increment 
-//         let i_exponent = FieldElement::add_assign_(&mut i_exponent, &one); //increment i by 1
-//     }
-//     let mut  Y_j_1_to_n:Vec<G2> = vec![];
-//     let mut j_exponent = FieldElement::one(); 
-//     for _ in 0..count_messages{
-//         let y_i=FieldElement::pow(&y,&j_exponent); // Calculate y^i 
-//         let g_y_i = params.g.scalar_mul_variable_time(&y_i); // Calculate g_tilde^y^i
-//         Y_j_1_to_n.push(g_y_i); // Add g_tilde^y^i to Y_tilde_i
-//         let one = FieldElement::one(); // create counter to increment 
-//         let j_exponent = FieldElement::add_assign_(&mut j_exponent, &one); //increment i by 1
-//     }
-//     let mut  Y_k_nplus2_to_2n:Vec<G2> = vec![];
-//     let mut k_exponent = FieldElement::one(); 
-//     for _ in (count_messages+2)..(2*count_messages) {
-//         let y_i=FieldElement::pow(&y,&k_exponent); // Calculate y^i
-//         let g_y_i = params.g.scalar_mul_variable_time(&y_i);
-//         let y_i = FieldElement::random();
-//         Y_k_nplus2_to_2n.push(g_y_i);
-//         let one = FieldElement::one(); // create counter to increment 
-//         let k_exponent = FieldElement::add_assign_(&mut k_exponent, &one);
-//     }
-//    (SKrss {x , y}, PKrss {g , g_tilde , Y_j_1_to_n , Y_k_nplus2_to_2n , X_tilde , Y_tilde_i})
-// }
+pub fn rsskeygen(count_messages: usize, params: &Params) -> (SKrss, PKrss) {
+    let x = FieldElement::random(); // sample x
+    let y = FieldElement::random(); // sample y
+    let g = params.g.scalar_mul_variable_time(&FieldElement::one());
+    let g_tilde= params.g_tilde.scalar_mul_variable_time(&FieldElement::one());
+    let X_tilde= params.g.scalar_mul_variable_time(&x); // Need exponent, not mul
+    let mut Y_tilde_i:Vec<VerkeyGroup> = vec![];
+    let mut i_exponent = FieldElement::one(); // start of exponent
+    for _ in 0..count_messages{
+        let y_i=FieldElement::pow(&y,&i_exponent); // Calculate y^i 
+        let g_tilde_y_i = params.g_tilde.scalar_mul_variable_time(&y_i); // Calculate g_tilde^y^i
+        Y_tilde_i.push(g_tilde_y_i); // Add g_tilde^y^i to Y_tilde_i
+        let one = FieldElement::one(); // create counter to increment 
+        let i_exponent = FieldElement::add_assign_(&mut i_exponent, &one); //increment i by 1
+    }
+    let mut  Y_j_1_to_n:Vec<G2> = vec![];
+    let mut j_exponent = FieldElement::one(); 
+    for _ in 0..count_messages{
+        let y_i=FieldElement::pow(&y,&j_exponent); // Calculate y^i 
+        let g_y_i = params.g.scalar_mul_variable_time(&y_i); // Calculate g_tilde^y^i
+        Y_j_1_to_n.push(g_y_i); // Add g_tilde^y^i to Y_tilde_i
+        let one = FieldElement::one(); // create counter to increment 
+        let j_exponent = FieldElement::add_assign_(&mut j_exponent, &one); //increment i by 1
+    }
+    let mut  Y_k_nplus2_to_2n:Vec<G2> = vec![];
+    let mut k_exponent = FieldElement::one(); 
+    for _ in (count_messages+2)..(2*count_messages) {
+        let y_i=FieldElement::pow(&y,&k_exponent); // Calculate y^i
+        let g_y_i = params.g.scalar_mul_variable_time(&y_i);
+        let y_i = FieldElement::random();
+        Y_k_nplus2_to_2n.push(g_y_i);
+        let one = FieldElement::one(); // create counter to increment 
+        let k_exponent = FieldElement::add_assign_(&mut k_exponent, &one);
+    }
+   (SKrss {x , y}, PKrss {g , g_tilde , Y_j_1_to_n , Y_k_nplus2_to_2n , X_tilde , Y_tilde_i})
+}
 
 
 /// Generate signing and verification keys for scheme from 2018 paper. The signing and verification
@@ -133,13 +133,13 @@ mod tests {
         assert_eq!(sk.y.len(), count_msgs+1);
         assert_eq!(vk.Y_tilde.len(), count_msgs+1);
     }
-    // #[test]
-    // // fn test_rsskeygen() {
-    // //     let count_msgs = 5;
-    // //     let params = Params::new("test".as_bytes());
-    // //     let (sk, pk) = rsskeygen(count_msgs, &params);
-    // //     println!("{:?}",sk);
-    // //     println!("{:?}",pk);
-    // // }
+    #[test]
+    fn test_rsskeygen() {
+        let count_msgs = 5;
+        let params = Params::new("test".as_bytes());
+        let (sk, pk) = rsskeygen(count_msgs, &params);
+        println!("{:?}",sk);
+        println!("{:?}",pk);
+    }
 
 }
