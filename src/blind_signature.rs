@@ -96,7 +96,7 @@ impl BlindSignature {
             points.push(blinding_key.Y[offset + i].clone());
         }
 
-        let mut sigma_2 = sigkey_X + &points.multi_scalar_mul_const_time(&scalars).unwrap();
+        let mut sigma_2 = sigkey_X + &points.multi_scalar_mul_const_time(scalars.as_ref()).unwrap();
         sigma_2 += commitment;
         sigma_2 = &sigma_2 * &u;
         Ok(Signature { sigma_1, sigma_2 })

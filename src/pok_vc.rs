@@ -107,7 +107,7 @@ macro_rules! impl_PoK_VC {
             pub fn finish(self) -> $ProverCommitted {
                 let commitment = self
                     .gens
-                    .multi_scalar_mul_const_time(&self.blindings)
+                    .multi_scalar_mul_const_time(self.blindings.as_ref())
                     .unwrap();
                 $ProverCommitted {
                     gens: self.gens,
@@ -190,7 +190,7 @@ macro_rules! impl_PoK_VC {
                 let mut scalars = self.responses.clone();
                 points.push(commitment.clone());
                 scalars.push(challenge.clone());
-                let pr = points.multi_scalar_mul_var_time(&scalars).unwrap() - &self.commitment;
+                let pr = points.multi_scalar_mul_var_time(scalars.as_ref()).unwrap() - &self.commitment;
                 Ok(pr.is_identity())
             }
         }
@@ -222,7 +222,7 @@ macro_rules! test_PoK_VC {
         secrets.push(FieldElement::random());
 
         let committed = commiting.finish();
-        let commitment = gens.multi_scalar_mul_const_time(&secrets).unwrap();
+        let commitment = gens.multi_scalar_mul_const_time(secrets.as_ref()).unwrap();
         let challenge = committed.gen_challenge(commitment.to_bytes());
         let proof = committed.gen_proof(&challenge, secrets.as_slice()).unwrap();
 

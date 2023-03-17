@@ -162,7 +162,7 @@ impl PoKOfSignature {
         }
 
         // Prove knowledge of m_1, m_2, ... for all hidden m_i and t in J = Y_tilde_1^m_1 * Y_tilde_2^m_2 * ..... * g_tilde^t
-        let J = bases.multi_scalar_mul_const_time(&exponents).unwrap();
+        let J = bases.multi_scalar_mul_const_time(exponents.as_ref()).unwrap();
 
         // For proving knowledge of messages in J.
         let mut committing = ProverCommittingOtherGroup::new();
@@ -255,7 +255,7 @@ impl PoKOfSignatureProof {
                 b.push(vk.Y_tilde[i].clone());
                 e.push(m.clone());
             }
-            j += b.multi_scalar_mul_var_time(&e).unwrap();
+            j += b.multi_scalar_mul_var_time(e.as_ref()).unwrap();
             &j
         };
         // e(sigma_1, (J + &X_tilde)) == e(sigma_2, g_tilde) => e(sigma_1, (J + &X_tilde)) * e(-sigma_2, g_tilde) == 1
