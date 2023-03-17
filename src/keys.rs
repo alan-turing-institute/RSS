@@ -30,8 +30,8 @@ pub struct SKrss {
 pub struct PKrss {
     pub g: G2,
     pub g_tilde: G1,
-    pub Y_i_n: Vec<SignatureGroup>,
-    pub Y_i_2n: Vec<SignatureGroup>,
+    pub Y_j_1_to_n: Vec<G2>,
+    pub Y_k_nplus2_to_2n: Vec<G2>,
     pub X_tilde: G1,
     Y_tilde_i: Vec<VerkeyGroup>,
 }
@@ -67,9 +67,11 @@ pub fn keygen(count_messages: usize, params: &Params) -> (Sigkey, Verkey) {
     (Sigkey { x, y }, Verkey { X_tilde, Y_tilde })
 }
 
-pub fn rsskeygen(count_messages: usize, params: &Params) -> (SKrss) {
+pub fn rsskeygen(count_messages: usize, params: &Params) -> (SKrss, PKrss) {
     let x = FieldElement::random(); // sample x
     let y = FieldElement::random(); // sample y
+    let g: G2 = params.g.scalar_mul_variable_time(&FieldElement::one());
+    let g_tilde: G1= params.g_tilde.scalar_mul_variable_time(&FieldElement::one());
     let X_tilde = params.g_tilde.scalar_mul_variable_time(&x); // Need exponent, not mul
     let mut Y_tilde_i:Vec<VerkeyGroup> = vec![];
     let mut i_exponent = FieldElement::one(); // start of exponent
@@ -99,7 +101,7 @@ pub fn rsskeygen(count_messages: usize, params: &Params) -> (SKrss) {
         let one = FieldElement::one(); // create counter to increment 
         let k_exponent = FieldElement::add_assign_(&mut k_exponent, &one);
     }
-   (SKrss {x,y})// PKrss{params.g, params.g_tilde,Y_j_1_to_n, Y_k_nplus2_to_2n, X_tilde, Y_tilde_i})
+   (SKrss {x , y}, PKrss {g , g_tilde , Y_j_1_to_n , Y_k_nplus2_to_2n , X_tilde , Y_tilde_i})
 }
 
 
@@ -119,8 +121,8 @@ mod tests {
     fn test_keygen() {
         let count_msgs = 5;
         let params = Params::new("test".as_bytes());
-        let (sk) = rsskeygen(count_msgs, &params);
-        println!("{:?}",sk)
+        let (sk, pk) = rsskeygen(count_msgs, &params);
+        println!("{:?}",pk)
     }
 
     #[test]
