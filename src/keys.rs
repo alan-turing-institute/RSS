@@ -29,10 +29,15 @@ pub struct Skrss {
     pub y: FieldElement,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Pkrss {
-    pub X: VerkeyGroup,
+    // H for a hash function
+    // pub g
+    // pub g_tilde
+    // pub Y_i_1_to_n
+    // pub Y_i_n+2_to_2n
+    pub X_tilde: VerkeyGroup,
     pub Y_tilde_i: Vec<FieldElement>,
-    pub Y_i: Vec<FieldElement>
 }
 
 impl Params {
@@ -59,28 +64,7 @@ pub fn keygen(count_messages: usize, params: &Params) -> (Sigkey, Verkey) {
     (Sigkey { x, y }, Verkey { X_tilde, Y_tilde })
 }
 
-pub fn rsskeygen(count_messages: usize, params: &Params) -> (Skrss , Pkrss) {
-    let x = FieldElement::random(); // Generate x
-    let y = FieldElement::random(); // Generate y
-    let X_tilde = &params.g_tilde * &x; // Calculate X
-    let mut i_exponent = FieldElement::one(); // start of exponent
-    let Y_tilde_i: Vec<FieldElement> = vec![]; // Generate Y_tilde_i
-    let Y_i: Vec<FieldElement> = vec![]; // Generate Y_i
-    for i in 0..count_messages{
-        let y_i = FieldElement::pow(&y,&i_exponent); // Calculate y^i
-        Y_tilde_i.push(FieldElement::pow(&params.g_tilde, &y_i); // Need to convert g_tilde to Field Element
-        i_exponent = FieldElement::plus(&i_exponent,&FieldElement::one()); // increment i exponent
-    }
-    for i in 0..(2*count_messages){
-        if i == (count_messages+1){
-            i += 1;
-        } else{
-            let y_i = FieldElement::pow(&y,&i_exponent); // Calculate y^i
-            Y_i.push(FieldElement::pow(&params.g, &y_i)); // Need to convert g to Field Element
-        }
-    }
-    (Skrss {x,y} , Pkrss{X_tilde, Y_tilde_i, Y_i})
-}
+
 
 
 /// Generate signing and verification keys for scheme from 2018 paper. The signing and verification
@@ -107,7 +91,7 @@ mod tests {
     fn test_rsskeygen(){
         let count_msgs = 5;
         let params = Params::new("test".as_bytes());
-        let (sk) = rsskeygen(count_msgs, &params);
+        let (sk, pk) = rsskeygen(count_msgs, &params);
         println!("{:?}", sk);
     }
 
