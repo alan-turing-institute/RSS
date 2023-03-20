@@ -5,7 +5,8 @@ use crate::errors::PSError;
 use crate::{ate_2_pairing, VerkeyGroup, VerkeyGroupVec, SignatureGroup, SignatureGroupVec};
 use amcl_wrapper::field_elem::{FieldElement, FieldElementVector};
 use amcl_wrapper::group_elem::{GroupElement, GroupElementVector};
-use crate::keys;
+use crate::keys::{PKrss, SKrss, Params,Sigkey,Verkey,rsskeygen};
+
 
 /// Created by the signer when no blinded messages. Also the receiver of a blind signature can get
 /// this by unblinding the blind signature.
@@ -22,34 +23,45 @@ pub struct RSignature {
 }
 
 impl RSignature{
-    pub fn rssnew(messages: &[FieldElement], sk: &SKrss, params: &Params) -> Result<Self, PSError>{
-        Self::rss_check_sigkey_and_messages_compat(messages, sk)?;
-        let rss_sigma_1 = SignatureGroup::from_msg_hash(&[label, " : g".as_bytes()].concat());
-        let x = sk.x;
+    pub fn rss_generate_signature(messages: &[FieldElement], sk: &SKrss, params: &Params) -> RSignature{
+        let rss_sigma_1 = SignatureGroup::random();
+        let sigma_2_exp = sk.x; // x
         let mut i_exponent = FieldElement::one();
-        for i in 0..len(messages){
-            sigma_2_y_i = FieldElement::multiply(messages[i],FieldElement::pow(&sk.y,&i_exponent));
-            sigma_2_exp = x.Add(sigma_2_y_i);
-            let rss_sigma_2 =rss_sigma_1.multi_scalar_mul_variable_time(sigma_2_exp);
-            let i_exponent = FieldElement::add_assign_(&mut i_exponent, &one);
+        let sigma_2_y_i = FieldElement::new(); // let it be 0
+        for i in 0.. messages.len(){
+            let sigma_2_y_i = 
+            FieldElement::multiply(&messages[i],&FieldElement::pow(&sk.y,&i_exponent)); // mi * y^i
+            i_exponent.add_assign_(&FieldElement::one());
         }
-        Self (rss_sigma_1, rss_sigma_2)
+        sigma_2_exp.add_assign_(&sigma_2_y_i);
+        let rss_sigma_2 =rss_sigma_1.scalar_mul_variable_time(&sigma_2_exp);
+        RSignature { sigma_1: (rss_sigma_1), sigma_2: (rss_sigma_2) }
     }
 
-
-
-
-    pub fn rss_check_sigkey_and_messages_compat(
-        messages: &[FieldElement],
-        sk: &SKrss,
-    ) -> Result<(), PSError> {
-        if sk.y.len() != messages.len() {
-            return Err(PSError::UnsupportedNoOfMessages {
-                expected: messages.len(),
-                given: sk.y.len()
-            });
+    pub fn rss_derive_signature(pk:PKrss, sig: RSignature,messages: &[FieldElement],index: Vec<i32>){
+        let r = FieldElement::random(); 
+        let t = FieldElement::random(); 
+        // Need to add component that checks len(I) is less than len(m)
+        let sigma_1_prime = sig.sigma_1 * r;
+        let sigma_2_prime = sig.sigma_2 * r * sigma_1_prime * t;
+        
+        for i in 0..messages.len(){
+            if index.contains(&i){
+                i += 1;
+            } else{
+                accumulator = pk.Y_tilde_i * messages[i];
+            }
+        };
+        let g_tilde_t = pk.g_tilde * t;
+        let sigma_prime_tilde = g_tilde_t * accumulator;
+        let mut c = vec![];
+        let mut hasher = Sha256::new();
+        for i in 0..len(messages){
+            if index.contains(&i){
+                let hash_input = concat!();
+                // let c_i = hasher::;
+            }
         }
-        Ok(())
     }
 }
 
@@ -183,7 +195,7 @@ impl Signature {
             Y_m_exps.push(msg);
         }
         // Y_m = X_tilde * Y_tilde[1]^m_1 * Y_tilde[2]^m_2 * ...Y_tilde[i]^m_i
-        let Y_m = &vk.X_tilde + &(Y_m_bases.multi_scalar_mul_var_time(&Y_m_exps).unwrap());
+        let Y_m = &vk.X_tilde + &(Y_m_bases.multi_scalar_mul_var_time(Y_m_exps.as_ref()).unwrap());
         // e(sigma_1, Y_m) == e(sigma_2, g2) => e(sigma_1, Y_m) * e(-sigma_2, g2) == 1, if precomputation can be used, then
         // inverse in sigma_2 can be avoided since inverse of g_tilde can be precomputed
         let e = ate_2_pairing(&self.sigma_1, &Y_m, &(self.sigma_2.negation()), &params.g_tilde);
@@ -231,4 +243,13 @@ mod tests {
             assert!(sig.verify(msgs, &vk, &params).unwrap());
         }
     }
+
+    #[test]
+    fn test_rss(){
+        let count_msgs = 5;
+        let params = Params::new("test".as_bytes());
+        let (sk, pk) = rsskeygen(count_msgs, &params);
+        
+    }
+
 }

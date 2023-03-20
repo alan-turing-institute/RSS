@@ -28,11 +28,11 @@ pub struct SKrss {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PKrss {
-    pub g: G2,
-    pub g_tilde: G1,
-    pub Y_j_1_to_n: Vec<G2>,
-    pub Y_k_nplus2_to_2n: Vec<G2>,
-    pub X_tilde: G2,
+    pub g: SignatureGroup,
+    pub g_tilde: VerkeyGroup,
+    pub Y_j_1_to_n: Vec<SignatureGroup>,
+    pub Y_k_nplus2_to_2n: Vec<SignatureGroup>,
+    pub X_tilde: SignatureGroup,
     Y_tilde_i: Vec<VerkeyGroup>,
 }
 

@@ -62,3 +62,4 @@ pub mod blind_signature;
 pub mod multi_signature;
 pub mod signature_2018;
 pub mod pok_sig_2018;
+pub mod rsssig;
