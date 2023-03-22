@@ -32,7 +32,7 @@ pub struct PKrss {
     pub g_tilde: VerkeyGroup,
     pub Y_j_1_to_n: Vec<SignatureGroup>,
     pub Y_k_nplus2_to_2n: Vec<SignatureGroup>,
-    pub X_tilde: SignatureGroup,
+    pub X_tilde: VerkeyGroup,
     Y_tilde_i: Vec<VerkeyGroup>,
 }
 
@@ -68,29 +68,46 @@ pub fn keygen(count_messages: usize, params: &Params) -> (Sigkey, Verkey) {
 }
 
 pub fn rsskeygen(count_messages: usize, params: &Params) -> (SKrss, PKrss) {
-    let x = FieldElement::random(); // sample x
-    let y = FieldElement::random(); // sample y
+    let x = FieldElement::random(); // x
+    let y = FieldElement::random(); // y
+    let X_tilde = params.g_tilde.scalar_mul_const_time(&x); // g~ * x
+    
     let g = params.g.scalar_mul_variable_time(&FieldElement::one());
     let g_tilde= params.g_tilde.scalar_mul_variable_time(&FieldElement::one());
-    let X_tilde= params.g.scalar_mul_variable_time(&x); // Need exponent, not mul
-    let mut Y_tilde_i:Vec<VerkeyGroup> = vec![];
+
+    let mut Y_tilde_i:Vec<VerkeyGroup> = vec![]; // Create a vector to store Y~i
     let mut i_exponent = FieldElement::one(); // start of exponent
+    
     for _ in 0..count_messages{
-        let y_i=FieldElement::pow(&y,&i_exponent); // Calculate y^i 
-        let g_tilde_y_i = params.g_tilde.scalar_mul_variable_time(&y_i); // Calculate g_tilde^y^i
-        Y_tilde_i.push(g_tilde_y_i); // Add g_tilde^y^i to Y_tilde_i
+        let y_i=
+        FieldElement::pow(&y,&i_exponent); // Calculate y ^ i 
+        
+        let g_tilde_y_i = 
+        params.g_tilde.scalar_mul_variable_time(&y_i); // Calculate g_tilde * y^i
+        
+        Y_tilde_i.push(g_tilde_y_i); // Add g_tilde * y^i to Y_tilde_i
+
         let one = FieldElement::one(); // create counter to increment 
-        let i_exponent = FieldElement::add_assign_(&mut i_exponent, &one); //increment i by 1
+        let i_exponent = 
+        FieldElement::add_assign_(&mut i_exponent, &one); //increment i by 1
     }
-    let mut  Y_j_1_to_n:Vec<G2> = vec![];
-    let mut j_exponent = FieldElement::one(); 
+    
+    let mut  Y_j_1_to_n:Vec<G2> = vec![]; // Create a vector to store Y_i
+    
     for _ in 0..count_messages{
-        let y_i=FieldElement::pow(&y,&j_exponent); // Calculate y^i 
-        let g_y_i = params.g.scalar_mul_variable_time(&y_i); // Calculate g_tilde^y^i
+        let y_i=
+        FieldElement::pow(&y,&i_exponent); // Calculate y^i 
+        
+        let g_y_i = 
+        params.g.scalar_mul_variable_time(&y_i); // Calculate g_tilde^y^i
+        
         Y_j_1_to_n.push(g_y_i); // Add g_tilde^y^i to Y_tilde_i
+        
         let one = FieldElement::one(); // create counter to increment 
-        let j_exponent = FieldElement::add_assign_(&mut j_exponent, &one); //increment i by 1
+        let i_exponent = 
+        FieldElement::add_assign_(&mut i_exponent, &one); //increment i by 1
     }
+   
     let mut  Y_k_nplus2_to_2n:Vec<G2> = vec![];
     let mut k_exponent = FieldElement::one(); 
     for _ in (count_messages+2)..(2*count_messages) {
