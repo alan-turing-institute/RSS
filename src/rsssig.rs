@@ -1,8 +1,10 @@
 // Scheme defined in 2016 paper, CT-RSA 2016 (eprint 2015/525), section 4.2.
 // The idea for blind signatures can be taken from Coconut
 
+use std::clone;
 use std::ops::Add;
-
+use hex_literal::hex;
+use sha2::{Sha256, Sha512, Digest};
 use crate::errors::PSError;
 use crate::{GT, ate_2_pairing, VerkeyGroup, VerkeyGroupVec, SignatureGroup, SignatureGroupVec};
 use amcl_wrapper::field_elem::{FieldElement, FieldElementVector};
@@ -24,61 +26,90 @@ pub struct RSignature {
     pub sigma_2: SignatureGroup,
 }
 
-// impl RSignature{
-//     pub fn rss_generate_signature(messages: &[FieldElement], sk: &SKrss, params: &Params) -> RSignature{
-//         let rss_sigma_1 = SignatureGroup::random(); // Sample a random element from G1
-//         let sigma_2_exp = sk.x; // x
-//         let mut i_exponent = FieldElement::one(); // use as index
-//         let sigma_2_y_i = FieldElement::one(); // let it be 1 for now
-//         let sum_y_m = FieldElement::new();
-//         for i in 0.. messages.len(){
-//             let y_i = FieldElement::pow(&sk.y, &i_exponent); // calculate y^i
-//             sum_y_m = FieldElement::multiply(&messages[i], &y_i); // Calculate y^i * m_i
-//             i_exponent.add_assign_(&FieldElement::one()); // i+1
-//         }
-//         sigma_2_exp.add_assign_(&sum_y_m); // x + sum of y^i * m_i
-//         let rss_sigma_2 =rss_sigma_1.scalar_mul_variable_time(&sigma_2_exp); // Calculate sigma_2 -> need to change to exp
-//         RSignature { sigma_1: (rss_sigma_1), sigma_2: (rss_sigma_2) }
-//     }
+impl RSignature{
+    pub fn rss_generate_signature(messages: &[FieldElement], sk: &SKrss, params: &Params) -> RSignature{
+        let rss_sigma_1 = SignatureGroup::random(); // Sample a random element from G1
+        let mut x = 
+        FieldElement::pow(&sk.x,&FieldElement::one()); // x
+        let mut i_exponent = FieldElement::one(); // use as index
+        
+        let sigma_2_y_i = FieldElement::one(); // let it be 1 for now
+        let mut sum_y_m = FieldElement::new();
+        
+        for i in 0.. messages.len(){
+            
+            let y_i = FieldElement::pow(&sk.y, &i_exponent); // calculate y^i
+            sum_y_m = FieldElement::multiply(&messages[i], &y_i); // Calculate y^i * m_i
+            i_exponent.add_assign_(&FieldElement::one()); // i+1
+        }
 
-//     // TO DO: Multiply two elements from the same group
-//     pub fn groupmultiplication(){
+        x.add_assign_(&sum_y_m); // x + sum of y^i * m_i
+        let rss_sigma_2 =rss_sigma_1.scalar_mul_variable_time(&x); // Calculate sigma_2 -> need to change to exp
+        RSignature { sigma_1: (rss_sigma_1), sigma_2: (rss_sigma_2) }
+    }
 
-//     }
-//     // TO DO: Exponentiate group element
-//     pub fn groupexponentiation(){
+    pub fn rss_derive_signature(pk:PKrss, rsig: RSignature,messages: &[FieldElement],index: Vec<i32>){
+        let r = FieldElement::random(); // sample r 
+        let t = FieldElement::random(); // sample t 
+        let r_clone = FieldElement::clone(&r);
+        let t_clone = FieldElement::clone(&t);
+        let sigma_1_prime = rsig.sigma_1 * r; // sigma'1 = sigma1 * r 
+        let sigma_2_r = rsig.sigma_2.scalar_mul_const_time(&r_clone); 
+        let mut sigma_1_prime_t = sigma_1_prime.scalar_mul_const_time(&t_clone);
+        let mut sigma_2_prime = sigma_1_prime_t+ sigma_2_r;
+        // sigma'2 = (sigma2)^r * (sigma1')^t
+        
+        let mut i: i32= 1;
+        let mut j= 1;
+        let mut accumulator = pk.X_tilde.scalar_mul_const_time(&FieldElement::new()); // set to 0
+        for _ in 0..messages.len(){
+            if index.contains(&i){
+                i += 1;
+            } else{
+                let Y_tilde_i = &pk.Y_tilde_i[j];
+                let Y_tilde_i_mj = Y_tilde_i.scalar_mul_const_time(&messages[j]);
+                accumulator += Y_tilde_i_mj;
+                j += 1;
+            }
+        };
+        let g_tilde_t = pk.g_tilde * t;
+        let sigma_prime_tilde = g_tilde_t + accumulator;
+        
+        let mut c = vec![];
+        // let mut hasher = Sha256::new();
+        let sigma_1_prime_string = sigma_1_prime.to_string();
+        let sigma_2_prime_string = sigma_2_prime.to_string();
+        let sigma_prime_tilde_string = sigma_prime_tilde.to_string();
+        let clone_index = index.clone();
+        let index_string = index.into_iter().map(|i| i.to_string()).collect::<String>();
+        let mut k:i32 = 1;
+        for _ in 0..messages.len(){
+            if clone_index.contains(&k){
+                let mut hasher = Sha256::new();
+                let k_index: String = k.to_string();
+                let concantenated= String::clone(&sigma_1_prime_string) + &sigma_2_prime_string + &sigma_prime_tilde_string
+                + &index_string+ &k_index;
+                let c_i = hasher.update(concantenated);
+                c.push(c_i);
+                k += 1;
+            } else{
+                k+=1;
+            }
+        }
+        let length_m = messages.len();
+        // error here - need to account for n to 2n for Y...
+        for _ in 0..messages.len(){
+            if clone_index.contains(&i){
+                let mut Y_index = messages.len()+1 as usize-i as usize;
+                let mut Y_1_to_n_index_t = &pk.Y_j_1_to_n[Y_index].scalar_mul_variable_time(&t_clone);
+                let mut Y_k_nplus2_to_2n_index_t = &pk.Y_k_nplus2_to_2n[Y_index];
+            } else {
 
-//     }
-
-//     pub fn rss_derive_signature(pk:PKrss, rsig: RSignature,messages: &[FieldElement],index: Vec<i32>){
-//         let r = FieldElement::random(); // sample r from Z_p^2
-//         let t = FieldElement::random(); // sample t from Z_p^2
+            }
+        }
     
-//         let sigma_1_prime = rsig.sigma_1 * r; // sigma'1 = sigma1^r need to change to exp
-//         let sigma_2_r = rsig.sigma_2 * r;
-//         let sigma_1_prime_t = sigma_1_prime * t;
-//         let sigma_2_prime = GT::product(&sigma_1_prime_t, &sigma_2_r);
-//         sigma_2_r.scalar_mul_variable_time(sigma_1_prime * t);
-//         // sigma'2 = (sigma2)^r * (sigma1')^t
-//         for i in 0..messages.len(){
-//             if index.contains(&i){
-//                 i += 1;
-//             } else{
-//                 let accumulator = pk.Y_tilde_i * messages[i];
-//             }
-//         };
-//         // let g_tilde_t = pk.g_tilde * t;
-//         // let sigma_prime_tilde = g_tilde_t * accumulator;
-//         // let mut c = vec![];
-//         // let mut hasher = Sha256::new();
-//         // for i in 0..len(messages){
-//         //     if index.contains(&i){
-//         //         let hash_input = concat!();
-//         //         // let c_i = hasher::;
-//         //     }
-//         // }
-//     }
-// }
+    }
+}
 
 impl Signature {
     /// Create a new signature. The signature generation involves generating a random value for `sigma_1` so different
