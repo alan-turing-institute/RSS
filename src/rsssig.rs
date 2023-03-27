@@ -72,39 +72,62 @@ impl RSignature{
                 j += 1;
             }
         };
-        let g_tilde_t = pk.g_tilde * t;
+        let g_tilde_t = pk.g_tilde * t_clone;
         let sigma_prime_tilde = g_tilde_t + accumulator;
-        
-        let mut c = vec![];
-        // let mut hasher = Sha256::new();
+
         let sigma_1_prime_string = sigma_1_prime.to_string();
         let sigma_2_prime_string = sigma_2_prime.to_string();
         let sigma_prime_tilde_string = sigma_prime_tilde.to_string();
         let clone_index = index.clone();
         let index_string = index.into_iter().map(|i| i.to_string()).collect::<String>();
+        
+        let mut c = vec![];
+
         let mut k:i32 = 1;
         for _ in 0..messages.len(){
             if clone_index.contains(&k){
-                let mut hasher = Sha256::new();
                 let k_index: String = k.to_string();
                 let concantenated= String::clone(&sigma_1_prime_string) + &sigma_2_prime_string + &sigma_prime_tilde_string
                 + &index_string+ &k_index;
-                let c_i = hasher.update(concantenated);
-                c.push(c_i);
+                let concantenated_bytes = concantenated.as_bytes();
+                let c_i : FieldElement= FieldElement::from_msg_hash(&concantenated_bytes);           
+                c.push(c_i); // How is C_i a scalar???
                 k += 1;
             } else{
                 k+=1;
             }
         }
-        let length_m = messages.len();
-        // error here - need to account for n to 2n for Y...
+        let mut p: i32= 1;
+        let mut jj: i32 =1;
+        let mut z: usize =1;
+        // let mut sigma_3_prime: G2 = GroupElement::new();
         for _ in 0..messages.len(){
-            if clone_index.contains(&i){
+            if clone_index.contains(&p){
                 let mut Y_index = messages.len()+1 as usize-i as usize;
-                let mut Y_1_to_n_index_t = &pk.Y_j_1_to_n[Y_index].scalar_mul_variable_time(&t_clone);
-                let mut Y_k_nplus2_to_2n_index_t = &pk.Y_k_nplus2_to_2n[Y_index];
+                let mut Y_t = SignatureGroup::new();
+                if (Y_index > messages.len()+1){
+                    Y_t = pk.Y_k_nplus2_to_2n[Y_index].clone();
+                } else {
+                    Y_t = pk.Y_j_1_to_n[Y_index].clone();
+                }
+                Y_t = Y_t.scalar_mul_const_time(&t);
+                let mut Y_mj = SignatureGroup::new();
+                if clone_index.contains(&jj){
+                    jj +=1;
+                } else {
+                    let mut Y_index_1 = messages.len() + 1 as usize-i as usize + jj as usize;
+                    if (Y_index_1 > messages.len()+1){
+                        Y_mj = pk.Y_k_nplus2_to_2n[Y_index_1].clone();
+                    } else {
+                        Y_mj = pk.Y_j_1_to_n[Y_index_1].clone();
+                    }
+                let mut product = Y_t + Y_mj;
+                product = product.scalar_mul_const_time(&c[z]);
+                // sigma_3_prime += product;
+                z+=1;
+                }
             } else {
-
+                p+=1;
             }
         }
     
