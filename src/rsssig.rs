@@ -24,11 +24,13 @@ pub struct Signature {
 pub struct RSignature {
     pub sigma_1: SignatureGroup,
     pub sigma_2: SignatureGroup,
+    pub sigma_3: SignatureGroup,
+    pub sigma_4: VerkeyGroup,
 }
 
 impl RSignature{
     pub fn rss_generate_signature(messages: &[FieldElement], sk: &SKrss, params: &Params) -> RSignature{
-        let rss_sigma_1 = SignatureGroup::random(); // Sample a random element from G1
+        let rss_sigma_1 = SignatureGroup::random(); // sigma_1 
         let mut x = 
         FieldElement::pow(&sk.x,&FieldElement::one()); // x
         let mut i_exponent = FieldElement::one(); // use as index
@@ -44,11 +46,13 @@ impl RSignature{
         }
 
         x.add_assign_(&sum_y_m); // x + sum of y^i * m_i
-        let rss_sigma_2 =rss_sigma_1.scalar_mul_variable_time(&x); // Calculate sigma_2 -> need to change to exp
-        RSignature { sigma_1: (rss_sigma_1), sigma_2: (rss_sigma_2) }
+        let rss_sigma_2 =rss_sigma_1.scalar_mul_variable_time(&x); // Calculate sigma_2 
+        let sigma_3_id = SignatureGroup::identity();
+        let sigma_4_id = VerkeyGroup::identity();
+        RSignature { sigma_1: (rss_sigma_1), sigma_2: (rss_sigma_2), sigma_3:(sigma_3_id), sigma_4: (sigma_4_id)}
     }
 
-    pub fn rss_derive_signature(pk:PKrss, rsig: RSignature,messages: &[FieldElement],index: Vec<i32>){
+    pub fn rss_derive_signature(pk:PKrss, rsig: RSignature,messages: &[FieldElement],index: Vec<i32>) -> RSignature{
         let r = FieldElement::random(); // sample r 
         let t = FieldElement::random(); // sample t 
         let r_clone = FieldElement::clone(&r);
@@ -100,7 +104,8 @@ impl RSignature{
         let mut p: i32= 1;
         let mut jj: i32 =1;
         let mut z: usize =1;
-        // let mut sigma_3_prime: G2 = GroupElement::new();
+        let mut sigma_3_prime = rsig.sigma_2.scalar_mul_const_time(&FieldElement::new());
+
         for _ in 0..messages.len(){
             if clone_index.contains(&p){
                 let mut Y_index = messages.len()+1 as usize-i as usize;
@@ -123,15 +128,24 @@ impl RSignature{
                     }
                 let mut product = Y_t + Y_mj;
                 product = product.scalar_mul_const_time(&c[z]);
-                // sigma_3_prime += product;
+                sigma_3_prime += product;
                 z+=1;
                 }
             } else {
                 p+=1;
             }
         }
-    
+        // need to derive a message that has been edited? 
+        RSignature{sigma_1: (sigma_1_prime), sigma_2: (sigma_2_prime), sigma_3: (sigma_3_prime), sigma_4:(sigma_prime_tilde)}
     }
+    // pk:PKrss, rsig: RSignature,messages: &[FieldElement],index: Vec<i32>
+        // if rsig.sigma_1 = SignatureGroup::identity(){
+            // return FALSE Bool
+        // }
+        //}
+    // pub fn verifyrsignature(pk:PKrss, rsig:RSignature, ){
+    
+    //}
 }
 
 impl Signature {
