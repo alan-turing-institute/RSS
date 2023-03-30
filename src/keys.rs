@@ -46,8 +46,8 @@ pub struct Params {
 impl Params {
     /// Generate g1, g2. These are shared by signer and all users.
     pub fn new(label: &[u8]) -> Self {
-        let g = SignatureGroup::from_msg_hash(&[label, " : g".as_bytes()].concat());
-        let g_tilde = VerkeyGroup::from_msg_hash(&[label, " : g_tilde".as_bytes()].concat());
+        let g = SignatureGroup::from_msg_hash(&[label, " : g".as_bytes()].concat()); // generate g from G1
+        let g_tilde = VerkeyGroup::from_msg_hash(&[label, " : g_tilde".as_bytes()].concat()); // generate g~ from G2
         Self { g, g_tilde }
     }
 }
@@ -67,60 +67,62 @@ pub fn keygen(count_messages: usize, params: &Params) -> (Sigkey, Verkey) {
     (Sigkey { x, y }, Verkey { X_tilde, Y_tilde })
 }
 
+// RSS
+// Takes the parameters and returns the secret key and public key
 pub fn rsskeygen(count_messages: usize, params: &Params) -> (SKrss, PKrss) {
-    let x = FieldElement::random(); // x
-    let y = FieldElement::random(); // y
-    let X_tilde = params.g_tilde.scalar_mul_const_time(&x); // g~ * x
+    let x = FieldElement::random(); // randomly sample x
+    let y = FieldElement::random(); // randomly sample y
+    let X_tilde = params.g_tilde.scalar_mul_const_time(&x); // X~ = g~ mul x
     
-    let g = params.g.scalar_mul_variable_time(&FieldElement::one());
-    let g_tilde= params.g_tilde.scalar_mul_variable_time(&FieldElement::one());
+    let g = params.g.clone(); // cannot move out of `params.g` which is behind a shared reference
+    let g_tilde= params.g_tilde.clone(); // cannot move out of `params.g_tilde` which is behind a shared reference
 
     let mut Y_tilde_i:Vec<VerkeyGroup> = vec![]; // Create a vector to store Y~i
-    let mut i_exponent = FieldElement::one(); // start of exponent
+    let mut i_exponent = FieldElement::one(); // create an index for Y~i and for calculating y^i (mod arithmetic)
     
     for _ in 0..count_messages{
         let y_i=
-        FieldElement::pow(&y,&i_exponent); // Calculate y ^ i 
+        FieldElement::pow(&y,&i_exponent); // Calculate y^i (mod arithmetic because y in Z2p)
         
         let g_tilde_y_i = 
-        params.g_tilde.scalar_mul_variable_time(&y_i); // Calculate g_tilde * y^i
+        params.g_tilde.scalar_mul_variable_time(&y_i); // Calculate g~ mul y^i
         
-        Y_tilde_i.push(g_tilde_y_i); // Add g_tilde * y^i to Y_tilde_i
-
-        let one = FieldElement::one(); // create counter to increment 
+        Y_tilde_i.push(g_tilde_y_i); // add g~ mul y^i to Y~i
+        
         let i_exponent = 
-        FieldElement::add_assign_(&mut i_exponent, &one); //increment i by 1
+        FieldElement::add_assign_(&mut i_exponent, &FieldElement::one()); //increment i by 1
     }
     
-    let mut  Y_j_1_to_n:Vec<G2> = vec![]; // Create a vector to store Y_i
-    
+    let mut  Y_j_1_to_n:Vec<G2> = vec![]; // Create a vector to store Yi for i = 1...n
+    i_exponent = FieldElement::one(); // Reset i back to 1
+
     for _ in 0..count_messages{
         let y_i=
         FieldElement::pow(&y,&i_exponent); // Calculate y^i 
         
         let g_y_i = 
-        params.g.scalar_mul_variable_time(&y_i); // Calculate g_tilde^y^i
+        params.g.scalar_mul_variable_time(&y_i); // Calculate g mul y^i
         
-        Y_j_1_to_n.push(g_y_i); // Add g_tilde^y^i to Y_tilde_i
+        Y_j_1_to_n.push(g_y_i); // Add g mul y^i to Y_tilde_i
         
-        let one = FieldElement::one(); // create counter to increment 
         let i_exponent = 
-        FieldElement::add_assign_(&mut i_exponent, &one); //increment i by 1
+        FieldElement::add_assign_(&mut i_exponent, &FieldElement::one()); //increment i by 1
     }
    
-    let mut  Y_k_nplus2_to_2n:Vec<G2> = vec![];
-    let mut k_exponent = FieldElement::one(); 
-    for _ in (count_messages+2)..(2*count_messages) {
-        let y_i=FieldElement::pow(&y,&k_exponent); // Calculate y^i
-        let g_y_i = params.g.scalar_mul_variable_time(&y_i);
-        let y_i = FieldElement::random();
-        Y_k_nplus2_to_2n.push(g_y_i);
-        let one = FieldElement::one(); // create counter to increment 
-        let k_exponent = FieldElement::add_assign_(&mut k_exponent, &one);
+    let mut  Y_k_nplus2_to_2n:Vec<G2> = vec![]; // Create a vector to store Yi for i=n+2...2n
+    i_exponent = FieldElement::one(); // Reset i back to 1
+
+    for _ in (count_messages+2)..(2*count_messages) { 
+        let y_i=FieldElement::pow(&y,&i_exponent); // Calculate y^i
+        let g_y_i = params.g.scalar_mul_variable_time(&y_i); // Calculate g mul y^i       
+        Y_k_nplus2_to_2n.push(g_y_i); // push g mul y^i to Y~i
+        let i_exponent = 
+        FieldElement::add_assign_(&mut i_exponent, &FieldElement::one()); // increment i by 1
     }
+    // secret key: {x,y} public key: {g, g~, Yi (i=1...n), Yi (i=n+2...2n), X~, Y~}
    (SKrss {x , y}, PKrss {g , g_tilde , Y_j_1_to_n , Y_k_nplus2_to_2n , X_tilde , Y_tilde_i})
 }
-
+// RSS
 
 /// Generate signing and verification keys for scheme from 2018 paper. The signing and verification
 /// keys will have 1 extra element for m'
@@ -157,6 +159,6 @@ mod tests {
         let (sk, pk) = rsskeygen(count_msgs, &params);
         println!("{:?}",sk);
         println!("{:?}",pk);
-    }
+    } // KeyGen seems to be okay - it runs but cannot tell if it is correct structurally
 
 }
