@@ -28,7 +28,7 @@ pub struct RSignature {
     pub sigma_4: VerkeyGroup,
 }
 
-type Message = Vec<FieldElement>;
+type Message = [FieldElement];
 type RedactedMessage = Vec<Option<FieldElement>>;
 
 // Methods associated with redaction
@@ -38,13 +38,21 @@ trait Redact{
 
 impl Redact for Message {
     fn to_redacted_message(&self, index: Vec<i32>) -> RedactedMessage{
-        self.iter().enumerate().map(|(idx,field_element)| {
-            if index.contains(&idx) {
-                Some(field_element.clone())
+        let mut i = 1;
+        let mut j = FieldElement::new();
+        let mut redacted_message :RedactedMessage = vec![];
+        for _ in 0..self.len(){
+            if index.contains(&i){
+                redacted_message[j] = self[j].clone();
+                i += 1;
+                j += FieldElement::one();
             } else {
-                None
+                redacted_message[j] = None;
+                i+=1; 
+                j += FieldElement::one();
             }
-        })
+        }
+        redacted_message
     }
 }
 
@@ -76,7 +84,7 @@ impl RSignature{
 
     // Given a public key, a signature, a message of length n, and an index of parts of redact, 
     // output a derived signature and redacted message 
-    pub fn rss_derive_signature(pk:PKrss, rsig: RSignature,messages: &[FieldElement],index: Vec<i32>) -> RSignature{
+    pub fn rss_derive_signature(pk:PKrss, rsig: RSignature,messages: &[FieldElement],index: Vec<i32>) -> (RSignature, &RedactedMessage){
         let r = FieldElement::random(); // Generate r
         let t = FieldElement::random(); // Generate t
         let r_clone = FieldElement::clone(&r); // Clone it for repeated uses
@@ -171,19 +179,8 @@ impl RSignature{
                 // do we need to increment all the other indexes too?
             }
         }
-        // i = 0;
-        // j = 0;
-        // for _ in 0..messages.len(){
-        //     if clone_index.contains(&i){
-        //         i+=1;
-        //         j+=1;
-        //     } else {
-        //         // redact i+=1;
-        //     }
-        // }
-        //  could the messages be a type Vec<Option<FieldElement>> where an element is None if redacted and Some(message_at_index_i)
-        // need to derive a message that has been edited? 
-        RSignature{sigma_1: (sigma_1_prime), sigma_2: (sigma_2_prime), sigma_3: (sigma_3_prime), sigma_4:(sigma_prime_tilde)}
+        let redacted_message = &messages.to_redacted_message(index);
+        (RSignature{sigma_1: (sigma_1_prime), sigma_2: (sigma_2_prime), sigma_3: (sigma_3_prime), sigma_4:(sigma_prime_tilde)},  redacted_message)
     }
     // pk:PKrss, rsig: RSignature,messages: &[FieldElement],index: Vec<i32>
         // if rsig.sigma_1 = SignatureGroup::identity(){
