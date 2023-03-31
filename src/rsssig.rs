@@ -38,18 +38,18 @@ trait Redact{
 
 impl Redact for Message {
     fn to_redacted_message(&self, index: Vec<i32>) -> RedactedMessage{
-        let mut i = 1;
-        let mut j = FieldElement::new();
-        let mut redacted_message :RedactedMessage = vec![];
+        let mut i = 0; // loop over index i for unredacted parts
+        let mut j: usize = 0; // use it to reference parts of a message 
+        let mut redacted_message :RedactedMessage = vec![]; // create empty vector for message 
         for _ in 0..self.len(){
             if index.contains(&i){
-                redacted_message[j] = self[j].clone();
-                i += 1;
-                j += FieldElement::one();
+                redacted_message[j] = Some(self[j].clone()); // copy unredacted parts of a message
+                i += 1; // increment
+                j += 1; // increment
             } else {
-                redacted_message[j] = None;
-                i+=1; 
-                j += FieldElement::one();
+                redacted_message[j] = None; // message is redacted
+                i+=1; // increment
+                j += 1; // increment
             }
         }
         redacted_message
@@ -84,7 +84,7 @@ impl RSignature{
 
     // Given a public key, a signature, a message of length n, and an index of parts of redact, 
     // output a derived signature and redacted message 
-    pub fn rss_derive_signature(pk:PKrss, rsig: RSignature,messages: &[FieldElement],index: Vec<i32>) -> (RSignature, &RedactedMessage){
+    pub fn rss_derive_signature(pk:PKrss, rsig: RSignature,messages: &[FieldElement],index: Vec<i32>) -> (RSignature, RedactedMessage){
         let r = FieldElement::random(); // Generate r
         let t = FieldElement::random(); // Generate t
         let r_clone = FieldElement::clone(&r); // Clone it for repeated uses
@@ -179,7 +179,7 @@ impl RSignature{
                 // do we need to increment all the other indexes too?
             }
         }
-        let redacted_message = &messages.to_redacted_message(index);
+        let redacted_message = messages.to_redacted_message(clone_index);
         (RSignature{sigma_1: (sigma_1_prime), sigma_2: (sigma_2_prime), sigma_3: (sigma_3_prime), sigma_4:(sigma_prime_tilde)},  redacted_message)
     }
     // pk:PKrss, rsig: RSignature,messages: &[FieldElement],index: Vec<i32>
