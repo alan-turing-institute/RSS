@@ -33,11 +33,11 @@ type RedactedMessage = Vec<Option<FieldElement>>;
 
 // Methods associated with redaction
 trait Redact{
-    fn to_redacted_message(&self, index: Vec<i32>) -> RedactedMessage;
+    fn to_redacted_message(&self, index: Vec<usize>) -> RedactedMessage;
 }
 
 impl Redact for Message {
-    fn to_redacted_message(&self, index: Vec<i32>) -> RedactedMessage{
+    fn to_redacted_message(&self, index: Vec<usize>) -> RedactedMessage{
         let mut i = 0; // loop over index i for unredacted parts
         let mut j: usize = 0; // use it to reference parts of a message 
         let mut redacted_message :RedactedMessage = vec![]; // create empty vector for message 
@@ -59,7 +59,7 @@ impl Redact for Message {
 impl RSignature{
     // Given a secret key, a message of length n, and the parameters, output a signature and a redacted message
     pub fn rss_generate_signature(messages: &[FieldElement], sk: &SKrss, params: &Params) -> RSignature{
-        let rss_sigma_1 = SignatureGroup::random(); // Generate sigma1
+        let rss_sigma_1 = SignatureGroup::random(); // Generate sigma1 -> check if the randomness is cryptographically secure
         let mut x = sk.x.clone(); // x
         let mut i_exponent = FieldElement::one(); // use as index
         
@@ -84,7 +84,7 @@ impl RSignature{
 
     // Given a public key, a signature, a message of length n, and an index of parts of redact, 
     // output a derived signature and redacted message 
-    pub fn rss_derive_signature(pk:PKrss, rsig: RSignature,messages: &[FieldElement],index: Vec<i32>) -> (RSignature, RedactedMessage){
+    pub fn rss_derive_signature(pk:PKrss, rsig: RSignature,messages: &[FieldElement],index: Vec<usize>) -> (RSignature, RedactedMessage){
         let r = FieldElement::random(); // Generate r
         let t = FieldElement::random(); // Generate t
         let r_clone = FieldElement::clone(&r); // Clone it for repeated uses
@@ -97,16 +97,16 @@ impl RSignature{
         let mut i: i32= 0; // create a counter to traverse message length
         let mut j= 0; // Need another counter of usize type 
         let mut accumulator = pk.X_tilde.scalar_mul_const_time(&FieldElement::new()); // set to 0 for sum of Y~j mul mj
-        for _ in 0..messages.len(){
-            if index.contains(&i){
-                i += 1; // we only want element not in Index
-                j += 1; // increment by 1
-            } else{
+        for j in 0..messages.len(){
+            if !index.contains(&j){
+                //i += 1; // we only want element not in Index
+                //j += 1; // increment by 1
+    
                 let Y_tilde_i = &pk.Y_tilde_i[j]; // select Y~[j]
                 let Y_tilde_i_mj = Y_tilde_i.scalar_mul_const_time(&messages[j]); // Y~[j] mul m[j]
                 accumulator += Y_tilde_i_mj; // Sum Y~[i] mul m[j]
-                j += 1; // increment by 1
-                i+=1; // increment by 1
+                
+                // i+=1; // increment by 1
             }
         };
         let g_tilde_t = pk.g_tilde * t_clone; // g~ mul t
@@ -120,7 +120,7 @@ impl RSignature{
         
         let mut c = vec![]; // create a vector to store c_i
 
-        let mut k:i32 = 0; // create index to find i in Index
+        let mut k = 0; // create index to find i in Index
         for _ in 0..messages.len(){
             if clone_index.contains(&k){
                 let k_index: String = k.to_string(); // convert k to string
@@ -134,8 +134,8 @@ impl RSignature{
                 k+=1; // increment k
             }
         }
-        let mut p: i32= 0; // counter to go through all of index I
-        let mut jj: i32 =1; // counter to go through all of j not in I
+        let mut p= 0; // counter to go through all of index I
+        let mut jj=1; // counter to go through all of j not in I
         let mut z: usize =1; // counter to refer parts of a message m_j
         let mut sigma_3_prime = rsig.sigma_2.scalar_mul_const_time(&FieldElement::new()); // create an empty element for sigma_3
 
@@ -183,9 +183,37 @@ impl RSignature{
         (RSignature{sigma_1: (sigma_1_prime), sigma_2: (sigma_2_prime), sigma_3: (sigma_3_prime), sigma_4:(sigma_prime_tilde)},  redacted_message)
     }
 
-    // pub fn verifyrsignature(pk:PKrss, rsig:RSignature, messages: &[FieldElement], index: Vec<i32>){
-    
-    // }
+    pub fn verifyrsignature(pk:PKrss, rsig:RSignature, messages: &[FieldElement], index: Vec<usize>){
+        if rsig.sigma_1.eq(&VerkeyGroup::identity()){
+            return 0;
+        } else {
+            let mut accumulator = VerkeyGroup::identity().scalar_mul_const_time(&FieldElement::new());
+            for i in index{
+                accumulator += pk.Y_tilde_i[i].scalar_mul_const_time(&messages[i]);
+            }
+            let first_equation = GT::ate_pairing(&accumulator,&rsig.sigma_1);
+            let second_equation = GT::ate_pairing(&pk.g_tilde, &rsig.sigma_2);
+            if first_equation == second_equation{
+                return true;
+            } else {
+                ;
+            }
+            let third_equation = GT::ate_pairing(&pk.g_tilde, &rsig.sigma_3);
+            let mut accumulator_2 = SignatureGroup::identity().scalar_mul_const_time(&FieldElement::new());
+            for i in index{
+                let index_value = messages.len() + 1 -i;
+                if index_value > messages.len(){
+                    accumulator_2 += pk.Y_k_nplus2_to_2n[index_value].scalar_mul_const_time(a); // find c_i
+                } else {
+                    accumulator_2 += pk.Y_j_1_to_n[index_value];
+                }
+            }
+            let fourth_equation = GT::ate_pairing(&rsig.sigma_4, &accumulator_2);
+            if third_equation == fourth_equation{
+                return true;
+            }
+        }
+    }
 }
 
 impl Signature {
@@ -368,10 +396,10 @@ mod tests {
     }
 
     #[test]
-    fn test_rss(){
+    fn test_rss_sig(){
         let count_msgs = 5;
         let params = Params::new("test".as_bytes());
         let (sk, pk) = rsskeygen(count_msgs, &params);
     }
-
+// https://hackmd.io/UJFBOl2DToSbFjFoEoMbOA?view
 }
