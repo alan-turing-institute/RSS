@@ -182,14 +182,10 @@ impl RSignature{
         let redacted_message = messages.to_redacted_message(clone_index);
         (RSignature{sigma_1: (sigma_1_prime), sigma_2: (sigma_2_prime), sigma_3: (sigma_3_prime), sigma_4:(sigma_prime_tilde)},  redacted_message)
     }
-    // pk:PKrss, rsig: RSignature,messages: &[FieldElement],index: Vec<i32>
-        // if rsig.sigma_1 = SignatureGroup::identity(){
-            // return FALSE Bool
-        // }
-        //}
-    pub fn verifyrsignature(pk:PKrss, rsig:RSignature, messages: &[FieldElement], index: Vec<i32>){
+
+    // pub fn verifyrsignature(pk:PKrss, rsig:RSignature, messages: &[FieldElement], index: Vec<i32>){
     
-    }
+    // }
 }
 
 impl Signature {
