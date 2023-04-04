@@ -44,7 +44,7 @@ pub struct Params {
 }
 
 impl Params {
-    /// Generate g1, g2. These are shared by signer and all users.
+    /// Generate g1, g2. These are shared by signer and all users. Picks a point from G1 and G2
     pub fn new(label: &[u8]) -> Self {
         let g = SignatureGroup::from_msg_hash(&[label, " : g".as_bytes()].concat()); // generate g from G1
         let g_tilde = VerkeyGroup::from_msg_hash(&[label, " : g_tilde".as_bytes()].concat()); // generate g~ from G2
@@ -112,7 +112,7 @@ pub fn rsskeygen(count_messages: usize, params: &Params) -> (SKrss, PKrss) {
     let mut  Y_k_nplus2_to_2n:Vec<G2> = vec![]; // Create a vector to store Yi for i=n+2...2n
     i_exponent = FieldElement::one(); // Reset i back to 1
 
-    for _ in (count_messages+2)..(2*count_messages) { 
+    for _ in (count_messages+1)..(2*count_messages) { 
         let y_i=FieldElement::pow(&y,&i_exponent); // Calculate y^i
         let g_y_i = params.g.scalar_mul_variable_time(&y_i); // Calculate g mul y^i       
         Y_k_nplus2_to_2n.push(g_y_i); // push g mul y^i to Y~i
@@ -157,8 +157,12 @@ mod tests {
         let count_msgs = 5;
         let params = Params::new("test".as_bytes());
         let (sk, pk) = rsskeygen(count_msgs, &params);
-        println!("{:?}",sk);
-        println!("{:?}",pk);
-    } // KeyGen seems to be okay - it runs but cannot tell if it is correct structurally
+        //println!("{:?}",params); // picked g1 g2 from G1 G2 -> Done!
+        //println!("{:?}",sk); // picked 2 random FieldElement which is an element of a mod -> Done!
+        //println!("{:?}",pk.X_tilde); // X~ = g~ mul x -> Done!
+        //println!("{:?}",pk.Y_tilde_i); // Y~ where each element is g~ mul y^i -> Done!
+        // println!("{:?}",pk.Y_j_1_to_n); //Y= g mul y^i for i =1...n -> Done!
+        //println!("{:?}",pk.Y_k_nplus2_to_2n); //Y= g mul y^i for i =n+2...2n -> Done!
+    } // KeyGen seems to be okay - I've been printing each element one by one
 
 }

@@ -37,19 +37,21 @@ trait Redact{
 }
 
 impl Redact for Message {
+    // Index I is the set of stuff we want to redact, the message should be m_i for i not in I
     fn to_redacted_message(&self, index: Vec<usize>) -> RedactedMessage{
         let mut i = 0; // loop over index i for unredacted parts
         let mut j: usize = 0; // use it to reference parts of a message 
-        let mut redacted_message :RedactedMessage = vec![]; // create empty vector for message 
+        let mut redacted_message :RedactedMessage = vec![None; self.len()]; // create empty vector for message 
         for _ in 0..self.len(){
             if index.contains(&i){
-                redacted_message[j] = Some(self[j].clone()); // copy unredacted parts of a message
-                i += 1; // increment
-                j += 1; // increment
-            } else {
                 redacted_message[j] = None; // message is redacted
                 i+=1; // increment
                 j += 1; // increment
+            } else {
+                redacted_message[j] = Some(self[j].clone()); // copy unredacted parts of a message
+                i += 1; // increment
+                j += 1; // increment
+                
             }
         }
         redacted_message
@@ -59,27 +61,23 @@ impl Redact for Message {
 impl RSignature{
     // Given a secret key, a message of length n, and the parameters, output a signature and a redacted message
     pub fn rss_generate_signature(messages: &[FieldElement], sk: &SKrss, params: &Params) -> RSignature{
-        let rss_sigma_1 = SignatureGroup::random(); // Generate sigma1 -> check if the randomness is cryptographically secure
+        let rss_sigma_1 = SignatureGroup::random(); // Generate sigma1
         let mut x = sk.x.clone(); // x
-        let mut i_exponent = FieldElement::one(); // use as index
-        
-        let sigma_2_y_i = FieldElement::one(); // set exponent at 1
+        let mut i_exponent = FieldElement::one(); // use as index for y^i
         let mut sum_y_m = FieldElement::new(); // set sum of y^i mul mi at 0
         
         for i in 0.. messages.len(){
             let y_i = FieldElement::pow(&sk.y, &i_exponent); // calculate y^i
             let y_i_m_i = FieldElement::multiply(&messages[i], &y_i); // Calculate y^i * m_i
             sum_y_m += y_i_m_i; // accumulate y^i * m_i for different i values
-            i_exponent.add_assign_(&FieldElement::one()); // increment i
+            i_exponent += &FieldElement::one(); // increment i -> usable for 1 to n
         }
         
-        x.add_assign_(&sum_y_m); // x + sum of y^i * m_i
+        x += &sum_y_m; // x + sum of y^i * m_i
         let rss_sigma_2 =rss_sigma_1.scalar_mul_variable_time(&x); // Calculate sigma_2 mul (x+sum of (y^i mul m_i)) 
-        let sigma_3_id = SignatureGroup::identity(); // Set sigma3 as identity
-        let sigma_4_id = VerkeyGroup::identity(); // set sigma4 as identity
         // RSS Signature is a bit different than the paper - we need the identity in sigma3 and sigma4 as part of verify for
         // unmodified signatures
-        RSignature { sigma_1: (rss_sigma_1), sigma_2: (rss_sigma_2), sigma_3:(sigma_3_id), sigma_4: (sigma_4_id)}
+        RSignature { sigma_1: (rss_sigma_1), sigma_2: (rss_sigma_2), sigma_3:(SignatureGroup::identity()), sigma_4: (VerkeyGroup::identity())}
     }
 
     // Given a public key, a signature, a message of length n, and an index of parts of redact, 
@@ -91,10 +89,10 @@ impl RSignature{
         let t_clone = FieldElement::clone(&t); // Clone it for repeated uses 
         let sigma_1_prime = rsig.sigma_1 * r; // sigma'1 = sigma1 * r 
         let sigma_2_r = rsig.sigma_2.scalar_mul_const_time(&r_clone); // sigma2 mul r 
-        let mut sigma_1_prime_t = sigma_1_prime.scalar_mul_const_time(&t_clone); // sigma'1 mul t
-        let mut sigma_2_prime = sigma_1_prime_t+ sigma_2_r; // sigma'2 = (sigma2 mul r) + (sigma'1 mul t)
-
-        let mut i: i32= 0; // create a counter to traverse message length
+        let sigma_1_prime_t = sigma_1_prime.scalar_mul_const_time(&t_clone); // sigma'1 mul t
+        let sigma_2_prime = sigma_1_prime_t+ sigma_2_r; // sigma'2 = (sigma2 mul r) + (sigma'1 mul t)
+        let index_clone = index.clone();
+        
         let mut j= 0; // Need another counter of usize type 
         let mut accumulator = pk.X_tilde.scalar_mul_const_time(&FieldElement::new()); // set to 0 for sum of Y~j mul mj
         for j in 0..messages.len(){
@@ -118,7 +116,7 @@ impl RSignature{
         let clone_index = index.clone(); // clone index
         let index_string = index.into_iter().map(|i| i.to_string()).collect::<String>(); // convert each element of index to string
         
-        let mut c = vec![]; // create a vector to store c_i
+        let mut c = FieldElementVector::new(index_clone.len()); // create a vector to store c_i
 
         let mut k = 0; // create index to find i in Index
         for _ in 0..messages.len(){
@@ -134,49 +132,33 @@ impl RSignature{
                 k+=1; // increment k
             }
         }
+        
         let mut p= 0; // counter to go through all of index I
-        let mut jj=1; // counter to go through all of j not in I
-        let mut z: usize =1; // counter to refer parts of a message m_j
-        let mut sigma_3_prime = rsig.sigma_2.scalar_mul_const_time(&FieldElement::new()); // create an empty element for sigma_3
+        let mut jj=0; // counter to go through all of j not in I
+        let mut z= FieldElement::new(); // counter to refer parts of a message m_j
+        let mut sigma_3_prime = SignatureGroup::new(); // create an empty element for sigma_3
 
+        let mut i: i32= 0; // create a counter to traverse message length
+        // NOTE: i is only for 1 to n, but we've been working with 0<=i<n. I changed Y^t_n+1-i to Y^t_n-i to account for this.
         for _ in 0..messages.len(){
-            if clone_index.contains(&p){
-                let mut Y_index = messages.len()+1 as usize-i as usize; // n+1-i for Y^t
+            if clone_index.contains(&p){ // Checks if p is in index
+                let mut Y_mj = SignatureGroup::new(); // create blank to store Y^mj
+                if clone_index.contains(&jj){
+                    jj += 1;
+                } else { // identify jj not in index
+                    let mut Y_mj_index = messages.len() - p as usize + jj as usize; // define index for Y^mj
+                    let mut Y_mji = pk.Y_k_nplus2_to_2n[Y_mj_index].clone(); // create blank to find each constituent of Y^mj
+                    Y_mj += Y_mji; // acumulate for Y_mj
+                    jj += 1; // increment index
+                }
                 let mut Y_t = SignatureGroup::new(); // create an empty group element to store Y^t
                 let mut Y_t_i = SignatureGroup::new(); // create blank to find each constituent of Y^t
-                if (Y_index > messages.len()+1){ // since Y is indexed by 1...n,n+2...2n
-                    Y_t_i = pk.Y_k_nplus2_to_2n[Y_index].clone().scalar_mul_const_time(&t); // Select Y and multiply by t
-                    Y_t += Y_t_i; // add to Y_t
-                    Y_index +=1; // Increase index
-                } else {
-                    Y_t_i = pk.Y_j_1_to_n[Y_index].clone().scalar_mul_const_time(&t); // Select Y and multiply by t
-                    Y_t += Y_t_i; // add to Y_t
-                    Y_index +=1; // Increase index
-                }
-                let mut Y_mj = SignatureGroup::new(); // create blank to store Y^mj
-                let mut Y_mji = SignatureGroup::new(); // create blank to find each constituent of Y^mj
-                if clone_index.contains(&jj){
-                    jj +=1; // if index in I, increase by 1 and do nothing
-                } else {
-                    let mut Y_index_1 = messages.len() + 1 as usize-i as usize + jj as usize; // n+1-i+j for Y^mj
-                    if (Y_index_1 > messages.len()+1){
-                        Y_mji = pk.Y_k_nplus2_to_2n[Y_index_1].clone(); // select Y^m_j
-                        Y_mj += Y_mji; // Accumulate value
-                        jj+=1; // increase counter
-                    } else {
-                        Y_mji = pk.Y_j_1_to_n[Y_index_1].clone(); // select Y^m_j
-                        Y_mj += Y_mji; // accumulate value
-                        jj+=1; // increase counter
-                    }
-                let mut product = Y_t + Y_mj; // Calculate Y^t + Y^mj
-                let mut Y_mul_c_i = product.scalar_mul_const_time(&c[z]); // (Y^t + Y^mj)^c[z]
-                sigma_3_prime += Y_mul_c_i; // add product to accumulator
-                z+=1; // increment index by 1
-                p+=1; // increment index by 1
-                }
+                Y_t_i = pk.Y_j_1_to_n[messages.len()-p-1].clone().scalar_mul_const_time(&t) + Y_mj;
+                Y_t += Y_t_i.scalar_mul_const_time(&c[p]);
+                p += 1;
             } else {
-                p+=1; // increment index by 1, means p is not in I
-                // do we need to increment all the other indexes too?
+                p +=1;
+
             }
         }
         let redacted_message = messages.to_redacted_message(clone_index);
@@ -184,33 +166,58 @@ impl RSignature{
     }
 
     pub fn verifyrsignature(pk:PKrss, rsig:RSignature, messages: &[FieldElement], index: Vec<usize>){
-        if rsig.sigma_1.eq(&VerkeyGroup::identity()){
-            return 0;
+        let mut test_check: bool = false;
+        let index_clone = index.clone();
+        if rsig.sigma_1 == SignatureGroup::identity(){
+            println!("{:?}",test_check) ;
         } else {
             let mut accumulator = VerkeyGroup::identity().scalar_mul_const_time(&FieldElement::new());
-            for i in index{
+            for i in index_clone{
                 accumulator += pk.Y_tilde_i[i].scalar_mul_const_time(&messages[i]);
             }
             let first_equation = GT::ate_pairing(&accumulator,&rsig.sigma_1);
             let second_equation = GT::ate_pairing(&pk.g_tilde, &rsig.sigma_2);
             if first_equation == second_equation{
-                return true;
-            } else {
                 ;
+            } else {
+                println!("{:?}",test_check);;
             }
             let third_equation = GT::ate_pairing(&pk.g_tilde, &rsig.sigma_3);
             let mut accumulator_2 = SignatureGroup::identity().scalar_mul_const_time(&FieldElement::new());
-            for i in index{
+            let clone_index = index.clone();
+            let mut c = FieldElementVector::new(clone_index.len()); // create a vector to store c_i
+            let sigma_1_string = rsig.sigma_1.to_string();
+            let sigma_2_string = rsig.sigma_2.to_string();
+            let sigma_tilde_string = rsig.sigma_4.to_string();
+            let index_string = clone_index.into_iter().map(|i| i.to_string()).collect::<String>(); // convert each element of index to string
+            let mut k = 0;
+            for _ in 0..messages.len(){
+                if clone_index.contains(&k){
+                    let concatenated = String::clone(&sigma_1_string) + &sigma_2_string + &sigma_tilde_string
+                    + &index_string + &k.to_string();
+                    let concantenated_bytes = concatenated.as_bytes();
+                    let c_i : FieldElement= FieldElement::from_msg_hash(&concantenated_bytes); // generate c_i
+                    c.push(c_i); // add c_i to a vector
+                    k += 1; // increment k
+                } else{
+                    k+=1; // increment k
+                }
+            }
+
+            for i in index_clone{
                 let index_value = messages.len() + 1 -i;
-                if index_value > messages.len(){
-                    accumulator_2 += pk.Y_k_nplus2_to_2n[index_value].scalar_mul_const_time(a); // find c_i
+                if index_value < messages.len(){
+                    accumulator_2 += pk.Y_j_1_to_n[index_value].scalar_mul_const_time(&c[i]); // find c_i somehow...
                 } else {
-                    accumulator_2 += pk.Y_j_1_to_n[index_value];
+                    accumulator_2 += pk.Y_k_nplus2_to_2n[index_value].scalar_mul_const_time(&c[i]);;
                 }
             }
             let fourth_equation = GT::ate_pairing(&rsig.sigma_4, &accumulator_2);
             if third_equation == fourth_equation{
-                return true;
+                test_check = true;
+                println!("{:?}",test_check);
+            } else {
+                println!("{:?}",test_check);
             }
         }
     }
@@ -400,6 +407,12 @@ mod tests {
         let count_msgs = 5;
         let params = Params::new("test".as_bytes());
         let (sk, pk) = rsskeygen(count_msgs, &params);
+        let msgs = (0..count_msgs).map(|_| FieldElement::random()).collect::<Vec<FieldElement>>();
+        let signature = RSignature::rss_generate_signature(&msgs, &sk, &params);
+        let index = vec![0];
+        let (redacted_signature, redacted_message) = RSignature::rss_derive_signature(pk, signature, &msgs, index);
+        //println!("{:?}", redacted_signature);
+        //println!("{:?}", redacted_message); -> Redacts correctly. 
     }
 // https://hackmd.io/UJFBOl2DToSbFjFoEoMbOA?view
 }
