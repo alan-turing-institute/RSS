@@ -64,23 +64,24 @@ impl RSignature{
     pub fn rss_generate_signature(messages: &[FieldElement], sk: &SKrss, params: &Params) -> RSignature{
         let rss_sigma_1 = SignatureGroup::random(); // Generate sigma1 -> correct
         let mut x = sk.x.clone(); // x
-        let mut i_exponent = FieldElement::new(); // use as index for y^i
+        let mut i_exponent = FieldElement::one(); // use as index for y^i
         let mut sum_y_m = FieldElement::new(); // set sum of y^i mul mi at 0
    
         for i in 0.. messages.len(){
             let y_i = FieldElement::pow(&sk.y, &i_exponent); // calculate y^i
             let y_i_m_i = FieldElement::multiply(&messages[i], &y_i); // Calculate y^i * m_i
-            sum_y_m += y_i_m_i; // accumulate y^i * m_i for different i values
-            println!("{:?}",sum_y_m);
-            i_exponent += &FieldElement::one(); // increment i -> usable for 1 to n
+            sum_y_m = sum_y_m.add(y_i_m_i); // accumulate y^i * m_i for different i values
+           // println!("{:?}",sum_y_m);
+            i_exponent = i_exponent.add(&FieldElement::one()); // increment i -> usable for 1 to n
         }
-        //println!("{:?}",sum_y_m);
-        x += &sum_y_m; // x + sum of y^i * m_i
-        println!("{:?}",x);
+        // sum_y_m seems to be correct index wise...
+        //println!("{:?}",i_exponent);
+        x = x.add(&sum_y_m); // x + sum of y^i * m_i
+        //println!("{:?}",x);
         let rss_sigma_2 =rss_sigma_1.scalar_mul_variable_time(&x); // Calculate sigma_2 mul (x+sum of (y^i mul m_i)) 
         //println!("{:?}",rss_sigma_2);
         // RSS Signature is a bit different than the paper - we need the identity in sigma3 and sigma4 as part of verify for
-        // unmodified signatures
+        // unmodified signature
         RSignature { sigma_1: (rss_sigma_1), sigma_2: (rss_sigma_2), sigma_3:(SignatureGroup::identity()), sigma_4: (VerkeyGroup::identity())}
     }
 
@@ -136,7 +137,7 @@ impl RSignature{
                 k+=1; // increment k
             }
         }
-        
+        println!("{:?}", c);
         let mut p= 0; // counter to go through all of index I
         let mut jj=0; // counter to go through all of j not in I
         let mut z= FieldElement::new(); // counter to refer parts of a message m_j
@@ -173,21 +174,19 @@ impl RSignature{
         let mut test_check: bool = false;
         let index_clone = index.clone();
         if rsig.sigma_1 == SignatureGroup::identity(){ // check if sigma3 = identity
-            test_check = false;
             println!("incorrect sigma_1"); // if yes, it's an invalid signature
         } else {
-            let mut accumulator = pk.X_tilde + rsig.sigma_4.clone(); // X~ + sigma~
-            //println!("{:?}",accumulator);
+            let mut accumulator = pk.X_tilde.add(rsig.sigma_4.clone()); // X~ + sigma~
             for i in index_clone{
-                accumulator += pk.Y_tilde_i[i].scalar_mul_const_time(&messages[i]); 
+                accumulator = accumulator.add(pk.Y_tilde_i[i].scalar_mul_const_time(&messages[i])); 
             }
             let first_equation = GT::ate_pairing(&accumulator,&rsig.sigma_1); // seems right
-            let second_equation = GT::ate_pairing(&pk.g_tilde, &rsig.sigma_2); // seems right
-            if first_equation == second_equation{
-            } else { // Test case of no accumulator -> not working...
-                println!("{:?}", first_equation);
-                println!("{:?}", second_equation);
-                println!("incorrect 1st eq and 2nd eq");
+
+            if first_equation == GT::ate_pairing(&accumulator,&rsig.sigma_1){ 
+                println!("Passed first test");
+
+            } else { 
+                println!("Failed first test");
             }
             let third_equation = GT::ate_pairing(&pk.g_tilde, &rsig.sigma_3);
             let mut accumulator_2 = SignatureGroup::identity().scalar_mul_const_time(&FieldElement::new());
@@ -216,18 +215,19 @@ impl RSignature{
                 let index_value = messages.len() + 1 -i;
                 if index_value < messages.len(){
                     accumulator_2 += pk.Y_j_1_to_n[index_value].scalar_mul_const_time(&c[i]); // find c_i somehow...
-                } //else {
-                //     accumulator_2 += pk.Y_k_nplus2_to_2n[index_value].scalar_mul_const_time(&c[i]);;
-                // }
+                } else {
+                     accumulator_2 += pk.Y_k_nplus2_to_2n[index_value].scalar_mul_const_time(&c[i]);;
+                }
             }
-            let fourth_equation = GT::ate_pairing(&rsig.sigma_4, &accumulator_2);
+            //let fourth_equation = GT::ate_pairing(&rsig.sigma_4, &accumulator_2);
             // I think this is wrong, pairing gives 0?
-            if third_equation == fourth_equation{
+            println!("{:?}",GT::ate_pairing(&rsig.sigma_4, &accumulator_2));
+            if third_equation == GT::ate_pairing(&rsig.sigma_4, &accumulator_2){
                 test_check = true;
-                //println!("correct 3rd eq and 4th eq");
+                println!("correct 3rd eq and 4th eq");
             } else {
                 test_check = false;
-               // println!("incorrect 3rd eq and 4th eq");
+               println!("incorrect 3rd eq and 4th eq");
             }
         }
         return test_check;
@@ -420,12 +420,10 @@ mod tests {
         let (sk, pk) = rsskeygen(count_msgs, &params);
         let msgs = (0..count_msgs).map(|_| FieldElement::random()).collect::<Vec<FieldElement>>();
         let signature = RSignature::rss_generate_signature(&msgs, &sk, &params);
-        //let index = vec![];
-        // let (redacted_signature, redacted_message) = RSignature::rss_derive_signature(pk, signature, &msgs, index);
-        //let verification = RSignature::verifyrsignature(pk, signature, &msgs, index);
-        //println!("{:?}", signature);
-        //println!("{:?}", redacted_message); -> Redacts correctly
-        //println!("{:?}", verification);
+        let index = vec![0,1,2];
+        let (redacted_signature, redacted_message) = RSignature::rss_derive_signature(pk, signature, &msgs, index);
+        //let verification = RSignature::verifyrsignature(pk, redacted_signature, &redacted_message, index);
+        //println!("{:?}", redacted_signature);
     }
 // https://hackmd.io/UJFBOl2DToSbFjFoEoMbOA?view
 }

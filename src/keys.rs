@@ -56,7 +56,7 @@ impl Params {
 pub fn keygen(count_messages: usize, params: &Params) -> (Sigkey, Verkey) {
     // TODO: Take PRNG as argument
     let x = FieldElement::random();
-    let X_tilde = &params.g_tilde * &x;
+    let X_tilde = params.g_tilde.scalar_mul_const_time(&x);
     let mut y = vec![];
     let mut Y_tilde = vec![];
     for _ in 0..count_messages {
@@ -70,13 +70,13 @@ pub fn keygen(count_messages: usize, params: &Params) -> (Sigkey, Verkey) {
 // RSS
 // Takes the parameters and returns the secret key and public key
 pub fn rsskeygen(count_messages: usize, params: &Params) -> (SKrss, PKrss) {
-    let x = FieldElement::random(); // randomly sample x -> correct 
-    let y = FieldElement::random(); // randomly sample y -> correct
-    let X_tilde = params.g_tilde.scalar_mul_const_time(&x); // X~ = g~ mul x -> correct
-    
     let g = params.g.clone(); // cannot move out of `params.g` which is behind a shared reference
     let g_tilde= params.g_tilde.clone(); // cannot move out of `params.g_tilde` which is behind a shared reference
 
+    let x = FieldElement::random(); // randomly sample x -> correct 
+    let y = FieldElement::random(); // randomly sample y -> correct
+    let X_tilde = g_tilde.scalar_mul_const_time(&x); // X~ = g~ mul x -> correct
+    
     let mut Y_tilde_i:Vec<VerkeyGroup> = vec![]; // Create a vector to store Y~i
     let mut i_exponent = FieldElement::one(); // create an index for Y~i and for calculating y^i (mod arithmetic) -> correct
 
