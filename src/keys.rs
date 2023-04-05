@@ -46,8 +46,8 @@ pub struct Params {
 impl Params {
     /// Generate g1, g2. These are shared by signer and all users. Picks a point from G1 and G2
     pub fn new(label: &[u8]) -> Self {
-        let g = SignatureGroup::from_msg_hash(&[label, " : g".as_bytes()].concat()); // generate g from G1
-        let g_tilde = VerkeyGroup::from_msg_hash(&[label, " : g_tilde".as_bytes()].concat()); // generate g~ from G2
+        let g = SignatureGroup::from_msg_hash(&[label, " : g".as_bytes()].concat()); // generate g from G1 -> correct
+        let g_tilde = VerkeyGroup::from_msg_hash(&[label, " : g_tilde".as_bytes()].concat()); // generate g~ from G2 -> correct
         Self { g, g_tilde }
     }
 }
@@ -70,45 +70,42 @@ pub fn keygen(count_messages: usize, params: &Params) -> (Sigkey, Verkey) {
 // RSS
 // Takes the parameters and returns the secret key and public key
 pub fn rsskeygen(count_messages: usize, params: &Params) -> (SKrss, PKrss) {
-    let x = FieldElement::random(); // randomly sample x
-    let y = FieldElement::random(); // randomly sample y
-    let X_tilde = params.g_tilde.scalar_mul_const_time(&x); // X~ = g~ mul x
+    let x = FieldElement::random(); // randomly sample x -> correct 
+    let y = FieldElement::random(); // randomly sample y -> correct
+    let X_tilde = params.g_tilde.scalar_mul_const_time(&x); // X~ = g~ mul x -> correct
     
     let g = params.g.clone(); // cannot move out of `params.g` which is behind a shared reference
     let g_tilde= params.g_tilde.clone(); // cannot move out of `params.g_tilde` which is behind a shared reference
 
     let mut Y_tilde_i:Vec<VerkeyGroup> = vec![]; // Create a vector to store Y~i
-    let mut i_exponent = FieldElement::one(); // create an index for Y~i and for calculating y^i (mod arithmetic)
-    // FieldElementVector -> Store fieldelement index?
+    let mut i_exponent = FieldElement::one(); // create an index for Y~i and for calculating y^i (mod arithmetic) -> correct
+
     for _ in 0..count_messages{
         let y_i=
         FieldElement::pow(&y,&i_exponent); // Calculate y^i (mod arithmetic because y in Z2p)
-        
         let g_tilde_y_i = 
         params.g_tilde.scalar_mul_variable_time(&y_i); // Calculate g~ mul y^i
-        
         Y_tilde_i.push(g_tilde_y_i); // add g~ mul y^i to Y~i
-        
-        let i_exponent = 
-        FieldElement::add_assign_(&mut i_exponent, &FieldElement::one()); //increment i by 1
+        i_exponent += FieldElement::one(); // increment i by 1
     }
-    
+    // Y_tilde_i seems correct in terms of length and input
     let mut  Y_j_1_to_n:Vec<G2> = vec![]; // Create a vector to store Yi for i = 1...n
     i_exponent = FieldElement::one(); // Reset i back to 1
+    //println!("{:?}",i_exponent);
     // write a function that returns index for y^i
     for _ in 0..count_messages{
         let y_i=
         FieldElement::pow(&y,&i_exponent); // Calculate y^i 
-        
+        //println!("{:?}",y_i);
         let g_y_i = 
         params.g.scalar_mul_variable_time(&y_i); // Calculate g mul y^i
         
         Y_j_1_to_n.push(g_y_i); // Add g mul y^i to Y_tilde_i
         
-        let i_exponent = 
-        FieldElement::add_assign_(&mut i_exponent, &FieldElement::one()); //increment i by 1
+        i_exponent += FieldElement::one();
+        //println!("{:?}",i_exponent);
     }
-   
+    // Y_j_1_to_n seems correct in terms of length and input
     let mut  Y_k_nplus2_to_2n:Vec<G2> = vec![]; // Create a vector to store Yi for i=n+2...2n
     i_exponent = FieldElement::one(); // Reset i back to 1
 
@@ -116,9 +113,9 @@ pub fn rsskeygen(count_messages: usize, params: &Params) -> (SKrss, PKrss) {
         let y_i=FieldElement::pow(&y,&i_exponent); // Calculate y^i
         let g_y_i = params.g.scalar_mul_variable_time(&y_i); // Calculate g mul y^i       
         Y_k_nplus2_to_2n.push(g_y_i); // push g mul y^i to Y~i
-        let i_exponent = 
-        FieldElement::add_assign_(&mut i_exponent, &FieldElement::one()); // increment i by 1
+        i_exponent += FieldElement::one(); // increment i by 1
     }
+    // Y_k_nplus2_to_2n seems correct in terms of length and input
     // secret key: {x,y} public key: {g, g~, Yi (i=1...n), Yi (i=n+2...2n), X~, Y~}
    (SKrss {x , y}, PKrss {g , g_tilde , Y_j_1_to_n , Y_k_nplus2_to_2n , X_tilde , Y_tilde_i})
 }
@@ -157,12 +154,6 @@ mod tests {
         let count_msgs = 5;
         let params = Params::new("test".as_bytes());
         let (sk, pk) = rsskeygen(count_msgs, &params);
-        //println!("{:?}",params); // picked g1 g2 from G1 G2 -> Done!
-        //println!("{:?}",sk); // picked 2 random FieldElement which is an element of a mod -> Done!
-        //println!("{:?}",pk.X_tilde); // X~ = g~ mul x -> Done!
-        //println!("{:?}",pk.Y_tilde_i); // Y~ where each element is g~ mul y^i -> Done!
-        // println!("{:?}",pk.Y_j_1_to_n); //Y= g mul y^i for i =1...n -> Done!
-        //println!("{:?}",pk.Y_k_nplus2_to_2n); //Y= g mul y^i for i =n+2...2n -> Done!
     } // KeyGen seems to be okay - I've been printing each element one by one
 
 }
