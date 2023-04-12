@@ -1,6 +1,6 @@
 // Scheme defined in 2016 paper, CT-RSA 2016 (eprint 2015/525), section 4.2.
 // The idea for blind signatures can be taken from Coconut
-
+use serde::{Serialize, Deserialize};
 use std::clone;
 use std::ops::Add;
 use hex_literal::hex;
@@ -28,6 +28,36 @@ pub struct RSignature {
     pub sigma_4: VerkeyGroup,
 }
 
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiD {
+    #[serde(rename = "@context")]
+    pub context: Vec<String>,
+    pub id: String,
+    #[serde(rename = "type")]
+    pub type_field: Vec<String>,
+    pub issuer: String,
+    pub issuance_date: String,
+    pub credential_subject: CredentialSubject,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialSubject {
+    pub name: String,
+    pub address: Address,
+    pub birth_date: String,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Address {
+    pub street_address: String,
+    pub postal_code: String,
+    pub address_locality: String,
+    pub address_country: String,
+}
+
 type Message = [FieldElement];
 type RedactedMessage = Vec<Option<FieldElement>>;
 
@@ -35,6 +65,11 @@ type RedactedMessage = Vec<Option<FieldElement>>;
 trait Redact{
     fn to_redacted_message(&self, index: Vec<usize>) -> RedactedMessage;
 }
+
+// pub fn did_to_fieldelements(message:DiD) -> FieldElement{
+//     let mut context_bytes = message.context.into_bytes();
+//     FieldElement;
+// }
 
 impl Redact for Message {
     // Index I is the set of stuff we want to redact, the message should be m_i for i not in I
@@ -143,7 +178,7 @@ impl RSignature{
                 let mut Y_mj = SignatureGroup::new(); // create blank to store Y^mj
                 if clone_index.contains(&not_in_I){
                     not_in_I += 1;
-                    println!("{:?}", not_in_I);
+                    //println!("{:?}", not_in_I);
                 } else { // identify elements not in index
                     let mut Y_mji = SignatureGroup::new();
                     let Y_mj_index = messages.len() - in_I + not_in_I ; // define index for Y^mj
@@ -155,7 +190,7 @@ impl RSignature{
                      // create blank to find each constituent of Y^mj
                     Y_mj = Y_mj.add(Y_mji); // acumulate for Y_mj
                     not_in_I += 1; // increment index
-                    println!("{:?}", not_in_I);
+                    //println!("{:?}", not_in_I);
                 }
                 //let mut Y_t = SignatureGroup::new(); // create an empty group element to store Y^t
                 let mut Y_t_i = SignatureGroup::new(); // create blank to find each constituent of Y^t
@@ -163,13 +198,13 @@ impl RSignature{
                 sigma_3_prime = sigma_3_prime.add(Y_t_i.scalar_mul_const_time(&c[in_I]));
                 in_I += 1;
 
-                println!("{:?}", in_I);
+                //println!("{:?}", in_I);
             } else {
                 in_I +=1;
-                println!("{:?}", in_I);
+                //println!("{:?}", in_I);
             }
         }
-        println!("{:?}",sigma_3_prime);
+        //println!("{:?}",sigma_3_prime);
         let redacted_message = messages.to_redacted_message(clone_index);
         (RSignature{sigma_1: (sigma_1_prime), sigma_2: (sigma_2_prime), sigma_3: (sigma_3_prime), sigma_4:(sigma_prime_tilde)},  redacted_message)
     }
@@ -195,7 +230,7 @@ impl RSignature{
             let third_equation = GT::ate_pairing(&pk.g_tilde, &rsig.sigma_3);
             let mut accumulator_2 = SignatureGroup::identity().scalar_mul_const_time(&FieldElement::new());
             let clone_index = index.clone();
-            let mut c = FieldElementVector::new(clone_index.len()); // create a vector to store c_i
+            let mut c = FieldElementVector::new(index.len()); // create a vector to store c_i
             let sigma_1_string = rsig.sigma_1.to_string();
             let sigma_2_string = rsig.sigma_2.to_string();
             let sigma_tilde_string = rsig.sigma_4.to_string();
@@ -207,31 +242,106 @@ impl RSignature{
                     + &index_string + &k.to_string();
                     let concantenated_bytes = concatenated.as_bytes();
                     let c_i : FieldElement= FieldElement::from_msg_hash(&concantenated_bytes); // generate c_i
-                    c.push(c_i); // add c_i to a vector
-                    println!("{:?}",k);
-                    k += 1; // increment k
-                } else{
-                    k+=1; // increment k
+                    c[k]=(c_i); // add c_i to a vector
+                    //k += 1; // increment k
+                //} else{
+                    //k+=1; // increment k
                 }
             }
-
             for i in index{
-                let index_value = messages.len() + 1 -i;
+                let index_value = messages.len()-i;
                 if index_value < messages.len(){
                     accumulator_2 += pk.Y_j_1_to_n[index_value].scalar_mul_const_time(&c[i]); // find c_i somehow...
-                } else {
-                     accumulator_2 += pk.Y_k_nplus2_to_2n[index_value].scalar_mul_const_time(&c[i]);;
+                // } else {
+                //      accumulator_2 += pk.Y_k_nplus2_to_2n[index_value].scalar_mul_const_time(&c[i]);
                 }
             }
-            //let fourth_equation = GT::ate_pairing(&rsig.sigma_4, &accumulator_2);
-            // I think this is wrong, pairing gives 0?
-            println!("{:?}",GT::ate_pairing(&rsig.sigma_4, &accumulator_2));
-            if third_equation == GT::ate_pairing(&rsig.sigma_4, &accumulator_2){
+            let fourth_equation = GT::ate_pairing(&rsig.sigma_4, &accumulator_2);
+            //println!("{:?}",accumulator_2);
+            //println!("{:?}",rsig.sigma_4);
+            //println!("{:?}",GT::ate_pairing(&rsig.sigma_4, &accumulator_2));
+            //println!("{:?}",third_equation);
+            if third_equation == fourth_equation{
                 test_check = true;
-                println!("correct 3rd eq and 4th eq");
+                println!("Passed second test");
             } else {
                 test_check = false;
-               println!("incorrect 3rd eq and 4th eq");
+               println!("Failed second test");
+            }
+        }
+        return test_check;
+    }
+
+
+    pub fn verifyredactedsignature(pk:PKrss, rsig:RSignature, messages: RedactedMessage, index: Vec<usize>)->bool{
+        let mut new_message: Vec<FieldElement> = vec![FieldElement::new();messages.len()];
+        for i in 0..new_message.len(){
+            if messages[i] == None{
+                new_message.push(FieldElement::new());
+            } else {
+                let clone_message = messages[i].clone();
+                new_message.push(clone_message.unwrap());
+            }
+        }
+        let mut test_check: bool = false;
+        let index_clone = index.clone();
+        if rsig.sigma_1 == SignatureGroup::identity(){ // check if sigma3 = identity
+            println!("incorrect sigma_1"); // if yes, it's an invalid signature
+        } else {
+            let mut accumulator = pk.X_tilde.add(rsig.sigma_4.clone()); // X~ + sigma~
+            for i in index_clone{
+                accumulator = accumulator.add(pk.Y_tilde_i[i].scalar_mul_const_time(&new_message[i])); 
+            }
+            let first_equation = GT::ate_pairing(&accumulator,&rsig.sigma_1); // seems right
+
+            if first_equation == GT::ate_pairing(&accumulator,&rsig.sigma_1){ 
+                println!("Passed first test");
+
+            } else { 
+                println!("Failed first test");
+            }
+            let third_equation = GT::ate_pairing(&pk.g_tilde, &rsig.sigma_3);
+            let mut accumulator_2 = SignatureGroup::new();
+            let clone_index = index.clone();
+            let mut c = FieldElementVector::new(index.len()); // create a vector to store c_i
+            let sigma_1_string = rsig.sigma_1.to_string();
+            let sigma_2_string = rsig.sigma_2.to_string();
+            let sigma_tilde_string = rsig.sigma_4.to_string();
+            let index_string = clone_index.into_iter().map(|i| i.to_string()).collect::<String>(); // convert each element of index to string
+            let mut k = 0;
+            for _ in 0..messages.len(){
+                if index.contains(&k){
+                    let concatenated = String::clone(&sigma_1_string) + &sigma_2_string + &sigma_tilde_string
+                    + &index_string + &k.to_string();
+                    let concantenated_bytes = concatenated.as_bytes();
+                    let c_i : FieldElement= FieldElement::from_msg_hash(&concantenated_bytes); // generate c_i
+                    c[k]=(c_i); // add c_i to a vector
+                    //k += 1; // increment k
+                //} else{
+                    //k+=1; // increment k
+                }
+            }
+            for i in index{
+                let index_value = messages.len()-i;
+                if index_value < messages.len(){
+                    accumulator_2 += pk.Y_j_1_to_n[index_value].scalar_mul_const_time(&c[i]); // find c_i somehow...
+                // } else {
+                //      accumulator_2 += pk.Y_k_nplus2_to_2n[index_value].scalar_mul_const_time(&c[i]);
+                }
+            }
+            let fourth_equation = GT::ate_pairing(&rsig.sigma_4, &accumulator_2);
+            println!("{:?}",&pk.g_tilde);
+            println!("{:?}",&rsig.sigma_3);
+            println!("{:?}",third_equation);
+            println!("{:?}",&rsig.sigma_4);
+            println!("{:?}",&accumulator_2);
+            println!("{:?}",fourth_equation);
+            if third_equation == fourth_equation{
+                test_check = true;
+                println!("Passed second test");
+            } else {
+                test_check = false;
+               println!("Failed second test");
             }
         }
         return test_check;
@@ -264,6 +374,9 @@ impl Signature {
         let sigma_2 = Self::sign_with_given_sigma_1(messages, sigkey, 0, &sigma_1)?;
         Ok(Self {sigma_1, sigma_2})
     }
+
+
+
 
     /// Generate signature when first element of signature tuple is generated using given exponent
     /// Does only 1 scalar multiplication
@@ -389,7 +502,7 @@ impl Signature {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keys::keygen;
+    use crate::{keys::keygen, rsssig};
     // For benchmarking
     use std::time::{Duration, Instant};
 
@@ -424,10 +537,26 @@ mod tests {
         let (sk, pk) = rsskeygen(count_msgs, &params);
         let msgs = (0..count_msgs).map(|_| FieldElement::random()).collect::<Vec<FieldElement>>();
         let signature = RSignature::rss_generate_signature(&msgs, &sk, &params);
-        let index = vec![0,1,2];
+        let index = vec![0,1];
+        let new_index = vec![0,1];
+        let new_pk = pk.clone();
         let (redacted_signature, redacted_message) = RSignature::rss_derive_signature(pk, signature, &msgs, index);
-        //let verification = RSignature::verifyrsignature(pk, redacted_signature, &redacted_message, index);
-        println!("{:?}", redacted_signature);
+        //let verify = RSignature::verifyrsignature(new_pk, redacted_signature, &msgs, new_index);
+        let verification = RSignature::verifyredactedsignature(new_pk, redacted_signature, redacted_message, new_index);
+        //println!("{:?}", redacted_signature);
     }
+
+    //#[test]
+    // fn test_generatedid(){
+    //     let example_id  = DiD {
+    //         context: vec!["https://www.w3.org/2018/credentials/v1".to_string(), "https://schema.org/".to_string()],
+    //         id: "http://example.edu/credentials/332".to_string(),
+    //         type_field: vec!["VerifiableCredential".to_string(), "IdentityCredential".to_string()],
+    //         issuer: "did:example:123456789abcdefghi".to_string(),
+    //         issuance_date: "2017-02-24T19:73:24Z".to_string(),
+    //         credential_subject: vec!["J. Doe",{"10 Rue de Chose";"98052";"Paris";"FR"},"1989-03-15"]
+    //     };
+    //     println!("{:?}",example_id);
+    // }
 // https://hackmd.io/UJFBOl2DToSbFjFoEoMbOA?view
 }

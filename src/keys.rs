@@ -1,5 +1,5 @@
 use std::ops::Add;
-
+use serde::{Serialize, Deserialize};
 use amcl_wrapper::field_elem::FieldElement;
 use amcl_wrapper::group_elem::GroupElement;
 use amcl_wrapper::group_elem_g2::G2;
