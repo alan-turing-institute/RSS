@@ -50,7 +50,7 @@ impl Params {
         let g_tilde = VerkeyGroup::from_msg_hash(&[label, " : g_tilde".as_bytes()].concat()); // generate g~ from G2 -> correct
         Self { g, g_tilde }
     }
-}
+}  // This seems correct, it generates two elements from G1 and G2.
 
 /// Generate signing and verification keys for scheme from 2016 paper
 pub fn keygen(count_messages: usize, params: &Params) -> (Sigkey, Verkey) {
@@ -69,15 +69,17 @@ pub fn keygen(count_messages: usize, params: &Params) -> (Sigkey, Verkey) {
 
 // RSS
 // Takes the parameters and returns the secret key and public key
+// Secret key correctly prints - two random field elements.
+// Public key seems to be correct. The vector lengths add up, and all the maths needed is what generates X~ (multiplication)
 pub fn rsskeygen(count_messages: usize, params: &Params) -> (SKrss, PKrss) {
     let x = FieldElement::random(); // randomly sample x -> correct 
     let y = FieldElement::random(); // randomly sample y -> correct
-    let X_tilde = params.g_tilde.scalar_mul_const_time(&x); // X~ = g~ mul x -> correct
+    let X_tilde = &params.g_tilde * &x; // X~ = g~ mul x -> correct
     
     let g = params.g.clone(); // cannot move out of `params.g` which is behind a shared reference
     let g_tilde= params.g_tilde.clone(); // cannot move out of `params.g_tilde` which is behind a shared reference
 
-    let mut Y_tilde_i:Vec<VerkeyGroup> = vec![]; // Create a vector to store Y~i
+    let mut Y_tilde_i= vec![]; // Create a vector to store Y~i
     let mut i_exponent = FieldElement::one(); // create an index for Y~i and for calculating y^i (mod arithmetic) -> correct
 
     for _ in 0..count_messages{
@@ -87,33 +89,35 @@ pub fn rsskeygen(count_messages: usize, params: &Params) -> (SKrss, PKrss) {
         params.g_tilde.scalar_mul_variable_time(&y_i); // Calculate g~ mul y^i
         Y_tilde_i.push(g_tilde_y_i); // add g~ mul y^i to Y~i
         i_exponent += FieldElement::one(); // increment i by 1
+        //println!("{:?}",Y_tilde_i); // Increments correctly
     }
     // Y_tilde_i seems correct in terms of length and input
-    let mut  Y_j_1_to_n:Vec<G2> = vec![]; // Create a vector to store Yi for i = 1...n
+    let mut  Y_j_1_to_n = vec![]; // Create a vector to store Yi for i = 1...n
     i_exponent = FieldElement::one(); // Reset i back to 1
     //println!("{:?}",i_exponent);
     // write a function that returns index for y^i
     for _ in 0..count_messages{
         let y_i=
         FieldElement::pow(&y,&i_exponent); // Calculate y^i 
-        println!("{:?}",y_i);
+        //println!("{:?}",y_i);
         let g_y_i = 
         params.g.scalar_mul_variable_time(&y_i); // Calculate g mul y^i
         
         Y_j_1_to_n.push(g_y_i); // Add g mul y^i to Y_tilde_i
         
         i_exponent += FieldElement::one();
-        println!("{:?}",i_exponent);
+       //println!("{:?}",Y_j_1_to_n.len());
     }
     // Y_j_1_to_n seems correct in terms of length and input
     let mut  Y_k_nplus2_to_2n:Vec<G2> = vec![]; // Create a vector to store Yi for i=n+2...2n
     i_exponent = FieldElement::one(); // Reset i back to 1
 
-    for _ in (count_messages+1)..(2*count_messages) { 
+    for _ in (count_messages+2)..=(2*count_messages) { 
         let y_i=FieldElement::pow(&y,&i_exponent); // Calculate y^i
         let g_y_i = params.g.scalar_mul_variable_time(&y_i); // Calculate g mul y^i       
         Y_k_nplus2_to_2n.push(g_y_i); // push g mul y^i to Y~i
         i_exponent += FieldElement::one(); // increment i by 1
+        //println!("{:?}",Y_k_nplus2_to_2n.len());
     }
     
     // secret key: {x,y} public key: {g, g~, Yi (i=1...n), Yi (i=n+2...2n), X~, Y~}
@@ -155,7 +159,8 @@ mod tests {
         let params = Params::new("test".as_bytes());
         let (sk, pk) = rsskeygen(count_msgs, &params);
         //assert_eq!(pk.Y_tilde_i[0],);
-        //println!("{:?}",pk); // X~ = g~ mul x -> Done!
+        println!("{:?}",pk); // X~ = g~ mul x -> Done!
+
         //println!("{:?}",pk.g.scalar_mul_const_time(&sk.x));
         //println!("{:?}",pk.Y_tilde_i.len()); // Y~ where each element is g~ mul y^i -> Done!
         // println!("{:?}",pk.Y_j_1_to_n); //Y= g mul y^i for i =1...n -> Done!
