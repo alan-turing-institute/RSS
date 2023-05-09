@@ -89,7 +89,7 @@ impl Redact for Message {
             }
         }
         redacted_message
-    } // This works as intended :) 
+    } // Works as intended. We input an index I of things we want to keep, and output is correct. 
 }
 
 impl RSignature{
@@ -214,8 +214,7 @@ impl RSignature{
             }
             let first_equation = GT::ate_pairing(&accumulator, &rsig.sigma_1);
             let second_equation = GT::ate_pairing(&pk.g_tilde, &rsig.sigma_2);
-            // println!("{:?}",first_equation);
-            // println!("{:?}",second_equation);
+
             if first_equation == second_equation{
                 println!("Passed first test");
             } else {
@@ -265,10 +264,10 @@ impl RSignature{
         let mut new_message: Vec<FieldElement> = vec![FieldElement::new();messages.len()];
         for i in 0..new_message.len(){
             if messages[i] == None{
-                new_message.push(FieldElement::new());
+                new_message[i]=FieldElement::new();
             } else {
                 let clone_message = messages[i].clone();
-                new_message.push(clone_message.unwrap());
+                new_message[i]=clone_message.unwrap();
             }
         }
         let mut test_check: bool = false;
@@ -276,48 +275,50 @@ impl RSignature{
         if rsig.sigma_1 == SignatureGroup::identity(){ // check if sigma3 = identity
             println!("incorrect sigma_1"); // if yes, it's an invalid signature
         } else {
-            let mut accumulator = pk.X_tilde.add(&rsig.sigma_4); // X~ + sigma~ correct
+            let mut accumulator = pk.X_tilde + &rsig.sigma_4; // X~ + sigma~ correct
             for i in index_clone{
-                accumulator = accumulator.add(pk.Y_tilde_i[i].scalar_mul_const_time(&new_message[i])); 
+                accumulator += pk.Y_tilde_i[i].scalar_mul_const_time(&new_message[i]); 
             }
             let first_equation = GT::ate_pairing(&accumulator, &rsig.sigma_1);
             let second_equation = GT::ate_pairing(&pk.g_tilde, &rsig.sigma_2);
-            if first_equation == GT::ate_pairing(&pk.g_tilde,&rsig.sigma_2){ 
+            if first_equation == second_equation{ 
                 println!("Passed first test");
             } else { 
                 println!("Failed first test");
             }
-            let third_equation = GT::ate_pairing(&pk.g_tilde, &rsig.sigma_3);
+            
+            let third_equation = GT::ate_pairing(&pk.g_tilde, &rsig.sigma_3); // correct
             let clone_index = index.clone();
             let mut c = FieldElementVector::new(new_message.len()); // create a vector to store c_i
             let sigma_1_string = rsig.sigma_1.to_string();
             let sigma_2_string = rsig.sigma_2.to_string();
             let sigma_tilde_string = rsig.sigma_4.to_string();
-            let index_string = clone_index.into_iter().map(|i| i.to_string()).collect::<String>(); // convert each element of index to string
-            for k in 0..messages.len(){
-                if index.contains(&k){
-                    let concatenated = String::clone(&sigma_1_string) + &sigma_2_string + &sigma_tilde_string
-                    + &index_string + &k.to_string();
-                    let concantenated_bytes = concatenated.as_bytes();
-                    let c_i : FieldElement= FieldElement::from_msg_hash(&concantenated_bytes); // generate c_i
-                    c[k]=c_i; // add c_i to a vector
-                    } // I've checked c -> it is the same as when generating redacted signature
-                }
+            let index_string = index.into_iter().map(|i| i.to_string()).collect::<String>(); // convert each element of index to string
             
+            for i in &clone_index{
+                let concatenated = String::clone(&sigma_1_string) + &sigma_2_string 
+                + &sigma_tilde_string + &index_string + &i.to_string();
+                let concantenated_bytes = concatenated.as_bytes();
+                let c_i : FieldElement= FieldElement::from_msg_hash(&concantenated_bytes); // generate c_i
+                c[*i]=c_i; // add c_i to a vector
+                     // I've checked c -> it is the same as when generating redacted signature
+                }
+            // println!("{:?}",c.len()); 
             let mut accumulator_2 = SignatureGroup::new();
-            let index_clone = index.clone();
+            let index_clone = clone_index.clone();
             for i in 0..messages.len(){
                 if index_clone.contains(&i){
                     let index_value = messages.len()-i-1;
-                    accumulator_2 = accumulator_2.add(pk.Y_j_1_to_n[index_value].scalar_mul_const_time(&c[i]));
-                    // } else {
-                    //     index_value = index_value-3;//redfine and cut -> is this the correct index value?
-                    //     accumulator_2 = accumulator_2.add(pk.Y_k_nplus2_to_2n[index_value].scalar_mul_const_time(&c[i]));
-                }  
+                    //println!("{:?}",index_value);
+                    if index_value <= messages.len(){
+                        accumulator_2 += pk.Y_j_1_to_n[index_value].scalar_mul_const_time(&c[i]);
+                    } else {
+                        accumulator_2 += pk.Y_k_nplus2_to_2n[index_value].scalar_mul_const_time(&c[i]);
+                    }
+                }
             }
             let fourth_equation = GT::ate_pairing(&rsig.sigma_4, &accumulator_2);
-            //println!("{:?}",third_equation);
-
+            println!("{:?}",fourth_equation);
             if third_equation == fourth_equation{
                 test_check = true;
                 println!("Passed second test");
@@ -534,7 +535,8 @@ mod tests {
         println!("{:?}", verify);
     }
     // test passes! when trying it out just remember to make sure the index is right
-// Recall index is the stuff we want to keep
+    // this test is for unredacted message, so index is every element
+    // Recall index is the stuff we want to keep
     #[test]
     fn test_rss_sig(){
         let count_msgs = 5;
@@ -542,12 +544,12 @@ mod tests {
         let (sk, pk) = rsskeygen(count_msgs, &params);
         let msgs = (0..count_msgs).map(|_| FieldElement::random()).collect::<Vec<FieldElement>>();
         let signature = RSignature::rss_generate_signature(&msgs, &sk);
-        let index = vec![0,1,2,3,4];
+        let index = vec![0,1,2,3];
         let index_clone = index.clone();
         let pk_new = pk.clone();
         let (redacted_signature, redacted_message) = RSignature::rss_derive_signature(pk, signature, &msgs, index);
         let verification = RSignature::verifyredactedsignature(pk_new, redacted_signature, redacted_message, index_clone);
-        println!("{:?}", verification);
+        //println!("{:?}", redacted_message);
     }
 
     // #[test]
