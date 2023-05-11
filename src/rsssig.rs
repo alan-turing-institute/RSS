@@ -171,17 +171,18 @@ impl RSignature{
             if !clone_index.contains(&j){
             vec_not_in_I.push(j);
             }
-        }      
+        }
         for i in vec_in_I{
             let mut Y_mj = SignatureGroup::new(); // create blank to store Y^mj
             for j in &vec_not_in_I{
                 let mut Y_mji = SignatureGroup::new();
-                let Y_mj_index = messages.len() - i + j;
+                let Y_mj_index = messages.len() - i + j -1;
                 println!("{:?}", Y_mj_index);
-                if Y_mj_index > messages.len(){
-                    Y_mji = pk.Y_k_nplus2_to_2n[Y_mj_index-messages.len()-1].clone();
+                if Y_mj_index >= messages.len(){
+                    Y_mji = pk.Y_k_nplus2_to_2n[Y_mj_index-messages.len()].clone().scalar_mul_const_time(&messages[*j]);
                 } else {
-                    Y_mji = pk.Y_j_1_to_n[Y_mj_index].clone();
+                    //println!("{:?}", Y_mj_index-1);
+                    Y_mji = pk.Y_j_1_to_n[Y_mj_index-1].clone();
                 }
                 Y_mj +=Y_mji; // acumulate for Y_mj
             }
@@ -535,7 +536,7 @@ mod tests {
         let (sk, pk) = rsskeygen(count_msgs, &params);
         let msgs = (0..count_msgs).map(|_| FieldElement::random()).collect::<Vec<FieldElement>>();
         let signature = RSignature::rss_generate_signature(&msgs, &sk);
-        let index = vec![0,1,2,3];
+        let index = vec![0,1,2];
         let index_clone = index.clone();
         let pk_new = pk.clone();
         let (redacted_signature, redacted_message) = RSignature::rss_derive_signature(pk, signature, &msgs, index);
