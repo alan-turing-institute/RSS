@@ -70,7 +70,7 @@ trait Redact{
 //     let mut context_bytes = message.context.into_bytes();
 //     FieldElement;
 // }
-
+// Implement trait to convert from math index starting from 1 to a computational index starting from 0
 impl Redact for Message {
     // RECALL: Index I is the set of stuff we want to keep!
     fn to_redacted_message(&self, index: Vec<usize>) -> RedactedMessage{
@@ -176,17 +176,24 @@ impl RSignature{
             let mut Y_mj = SignatureGroup::new(); // create blank to store Y^mj
             for j in &vec_not_in_I{
                 let mut Y_mji = SignatureGroup::new();
-                let Y_mj_index = messages.len() - i + j -1;
-                println!("{:?}", Y_mj_index);
-                if Y_mj_index >= messages.len(){
-                    Y_mji = pk.Y_k_nplus2_to_2n[Y_mj_index-messages.len()].clone().scalar_mul_const_time(&messages[*j]);
+                let Y_mj_index = messages.len() + 1 - i + j;
+                //println!("{:?}", Y_mj_index);
+                if Y_mj_index > (messages.len()+1){
+                    // j = 1 and 2, Y_mj_index = 5 and 6
+                    let new_index = Y_mj_index- messages.len()-2;
+                    // new index for n+2 to 2n = 0 and 1
+                    //println!("{:?}", new_index);
+                    Y_mji = pk.Y_k_nplus2_to_2n[new_index].clone().scalar_mul_const_time(&messages[*j]);
                 } else {
-                    //println!("{:?}", Y_mj_index-1);
-                    Y_mji = pk.Y_j_1_to_n[Y_mj_index-1].clone();
+                    println!("{:?}", Y_mj_index-1);
+                    // need to figure out equation for index when index => n
+                    Y_mji = pk.Y_j_1_to_n[messages.len()- Y_mj_index-1].clone();
                 }
                 Y_mj +=Y_mji; // acumulate for Y_mj
             }
             let mut Y_t_i = SignatureGroup::new(); // create blank to find each constituent of Y^t
+            // messages.len()-i-1 seems like the correct index -> take into account i from 0 and vector ranges 0 to n-1
+            println!("{:?}", messages.len()-i-1);
             Y_t_i = pk.Y_j_1_to_n[messages.len()-i-1].clone().scalar_mul_const_time(&t) + Y_mj;
             sigma_3_prime = Y_t_i.scalar_mul_const_time(&c[i]);
         }
@@ -214,29 +221,34 @@ impl RSignature{
                return test_check;
             }
             // Given unredacted case, third and fourth equation is all zero
-            let third_equation = GT::ate_pairing(&pk.g_tilde, &rsig.sigma_3);
-            let mut accumulator_2 = SignatureGroup::new();
+            let third_equation = GT::ate_pairing(&pk.g_tilde, &rsig.sigma_3); // correct
             let clone_index = index.clone();
             let mut c = FieldElementVector::new(messages.len()); // create a vector to store c_i
             let sigma_1_string = rsig.sigma_1.to_string();
             let sigma_2_string = rsig.sigma_2.to_string();
             let sigma_tilde_string = rsig.sigma_4.to_string();
-            let index_string = clone_index.into_iter().map(|i| i.to_string()).collect::<String>(); // convert each element of index to string
-            for k in 0..messages.len(){
-                if index.contains(&k){
-                    let concatenated = String::clone(&sigma_1_string) + &sigma_2_string + &sigma_tilde_string
-                    + &index_string + &k.to_string();
-                    let concantenated_bytes = concatenated.as_bytes();
-                    let c_i : FieldElement= FieldElement::from_msg_hash(&concantenated_bytes); // generate c_i
-                    c[k]=c_i; // add c_i to a vector
-                    }
+            let index_string = index.into_iter().map(|i| i.to_string()).collect::<String>(); // convert each element of index to string
+            
+            for i in &clone_index{
+                let concatenated = String::clone(&sigma_1_string) + &sigma_2_string 
+                + &sigma_tilde_string + &index_string + &i.to_string();
+                let concantenated_bytes = concatenated.as_bytes();
+                let c_i : FieldElement= FieldElement::from_msg_hash(&concantenated_bytes); // generate c_i
+                c[*i]=c_i; // add c_i to a vector
+                     // I've checked c -> it is the same as when generating redacted signature
                 }
-            for i in index{
-                let index_value = messages.len()-i;
-                if index_value < messages.len(){
-                    accumulator_2 += pk.Y_j_1_to_n[index_value].scalar_mul_const_time(&c[i]); // find c_i somehow...
-                // } else {
-                //      accumulator_2 += pk.Y_k_nplus2_to_2n[index_value].scalar_mul_const_time(&c[i]);
+            // println!("{:?}",c.len()); 
+            let mut accumulator_2 = SignatureGroup::new();
+            let index_clone = clone_index.clone();
+            for i in 0..messages.len(){
+                if index_clone.contains(&i){
+                    let index_value = messages.len()-i-1;
+                    //println!("{:?}",index_value);
+                    if index_value <= messages.len(){
+                        accumulator_2 += pk.Y_j_1_to_n[index_value].scalar_mul_const_time(&c[i]);
+                    } else {
+                        accumulator_2 += pk.Y_k_nplus2_to_2n[index_value].scalar_mul_const_time(&c[i]);
+                    }
                 }
             }
             let fourth_equation = GT::ate_pairing(&rsig.sigma_4, &accumulator_2);
@@ -517,12 +529,12 @@ mod tests {
 
     #[test]
     fn generate_normal_rsig() {
-        let count_msgs = 10;
+        let count_msgs = 3; // n
         let params = Params::new("test".as_bytes());
         let (sk, pk) = rsskeygen(count_msgs, &params);
         let msgs = (0..count_msgs).map(|_| FieldElement::random()).collect::<Vec<FieldElement>>();
         let signature = RSignature::rss_generate_signature(&msgs, &sk);
-        let index_kept = vec![0,1,2,3,4,5,6,7,8,9];
+        let index_kept = vec![0,1,2];
         let verify = RSignature::verifyrsignature(pk, signature, &msgs, index_kept);
         println!("{:?}", verify);
     }
@@ -531,12 +543,12 @@ mod tests {
     // Recall index is the stuff we want to keep
     #[test]
     fn test_rss_sig(){
-        let count_msgs = 5;
+        let count_msgs = 3;
         let params = Params::new("test".as_bytes());
         let (sk, pk) = rsskeygen(count_msgs, &params);
         let msgs = (0..count_msgs).map(|_| FieldElement::random()).collect::<Vec<FieldElement>>();
         let signature = RSignature::rss_generate_signature(&msgs, &sk);
-        let index = vec![0,1,2];
+        let index = vec![0];
         let index_clone = index.clone();
         let pk_new = pk.clone();
         let (redacted_signature, redacted_message) = RSignature::rss_derive_signature(pk, signature, &msgs, index);
