@@ -128,14 +128,22 @@ impl RSignature{
         let sigma_2_r = rsig.sigma_2.scalar_mul_const_time(&r); // sigma2 mul r 
         let sigma_1_prime_t = sigma_1_prime.scalar_mul_const_time(&t); // sigma'1 mul t
         let sigma_2_prime = sigma_1_prime_t.add(sigma_2_r) ; // sigma'2 = (sigma2 mul r) + (sigma'1 mul t)
-        
-        let mut accumulator = VerkeyGroup::new(); // set to 0 for sum of Y~j mul mj
+        let clone_index: Vec<usize> = index.clone(); // clone index
+
+        let vec_in_I = clone_index.clone();
+        let mut vec_not_in_I: Vec<usize> = Vec::new();
         for j in 0..messages.len(){
-            if !index.contains(&j){
-                let Y_tilde_i = &pk.Y_tilde_i[j]; // select Y~[j]
-                let Y_tilde_i_mj = Y_tilde_i.scalar_mul_const_time(&messages[j]); // Y~[j] mul m[j]
-                accumulator += Y_tilde_i_mj; // Sum Y~[i] mul m[j]
+            if !clone_index.contains(&j){
+            vec_not_in_I.push(j);
             }
+        }
+
+        let mut accumulator = VerkeyGroup::new(); // set to 0 for sum of Y~j mul mj
+        for j in &vec_not_in_I{
+                // let Y_tilde_i = ; // select Y~[j]
+                let Y_tilde_i_mj = &pk.Y_tilde_i[*j].scalar_mul_const_time(&messages[*j]); // Y~[j] mul m[j]
+                accumulator += Y_tilde_i_mj; // Sum Y~[i] mul m[j]
+            
         };
 
         let g_tilde_t = pk.g_tilde.scalar_mul_const_time(&t) ; // g~ mul t
@@ -144,7 +152,6 @@ impl RSignature{
         let sigma_1_prime_string = sigma_1_prime.to_string(); // convert sigma1' to string
         let sigma_2_prime_string = sigma_2_prime.to_string(); // convert sigma2' to string
         let sigma_prime_tilde_string = sigma_prime_tilde.to_string(); // convert sigma~' to string
-        let clone_index = index.clone(); // clone index
         let index_string = index.into_iter().map(|i| i.to_string()).collect::<String>(); // convert each element of index to string
         
         let mut c = FieldElementVector::new(messages.len()); // create a vector to store c_i
@@ -163,15 +170,9 @@ impl RSignature{
             }
         }
         let mut sigma_3_prime = SignatureGroup::new(); // create an empty element for sigma_3
-        //println!("{:?}", clone_index);
+        //println!("{:?}", c);
         // NOTE: i is only for 1 to n, but we've been working with 0<=i<n. I changed Y^t_n+1-i to Y^t_n-i to account for this.
-        let vec_in_I = clone_index.clone();
-        let mut vec_not_in_I: Vec<usize> = Vec::new();
-        for j in 0..messages.len(){
-            if !clone_index.contains(&j){
-            vec_not_in_I.push(j);
-            }
-        }
+
         for i in vec_in_I{
             let mut Y_mj = SignatureGroup::new(); // create blank to store Y^mj
             for j in &vec_not_in_I{
@@ -185,15 +186,15 @@ impl RSignature{
                     //println!("{:?}", new_index);
                     Y_mji = pk.Y_k_nplus2_to_2n[new_index].clone().scalar_mul_const_time(&messages[*j]);
                 } else {
-                    println!("{:?}", Y_mj_index-1);
-                    // need to figure out equation for index when index => n
-                    Y_mji = pk.Y_j_1_to_n[messages.len()- Y_mj_index-1].clone();
+                    //println!("{:?}", Y_mj_index-1);
+                    // need to figure out equation for index when index =< n
+                    Y_mji = pk.Y_j_1_to_n[Y_mj_index-1].clone();
                 }
                 Y_mj +=Y_mji; // acumulate for Y_mj
             }
             let mut Y_t_i = SignatureGroup::new(); // create blank to find each constituent of Y^t
             // messages.len()-i-1 seems like the correct index -> take into account i from 0 and vector ranges 0 to n-1
-            println!("{:?}", messages.len()-i-1);
+            //println!("{:?}", messages.len()-i-1);
             Y_t_i = pk.Y_j_1_to_n[messages.len()-i-1].clone().scalar_mul_const_time(&t) + Y_mj;
             sigma_3_prime = Y_t_i.scalar_mul_const_time(&c[i]);
         }
@@ -237,7 +238,7 @@ impl RSignature{
                 c[*i]=c_i; // add c_i to a vector
                      // I've checked c -> it is the same as when generating redacted signature
                 }
-            // println!("{:?}",c.len()); 
+            //println!("{:?}",c); 
             let mut accumulator_2 = SignatureGroup::new();
             let index_clone = clone_index.clone();
             for i in 0..messages.len(){
@@ -304,25 +305,24 @@ impl RSignature{
                 + &sigma_tilde_string + &index_string + &i.to_string();
                 let concantenated_bytes = concatenated.as_bytes();
                 let c_i : FieldElement= FieldElement::from_msg_hash(&concantenated_bytes); // generate c_i
-                c[*i]=c_i; // add c_i to a vector
-                     // I've checked c -> it is the same as when generating redacted signature
+                c[*i]=c_i; 
                 }
+            // c vector is correct, equivalent to c for redacted signature. 
             // println!("{:?}",c.len()); 
-            let mut accumulator_2 = SignatureGroup::new();
+            let mut accumulator_2 = SignatureGroup::new(); // start from 0
             let index_clone = clone_index.clone();
-            for i in 0..messages.len(){
+            //println!("{:?}",index_clone);
+            for i in 0..messages.len(){ // go through everything in index
                 if index_clone.contains(&i){
-                    let index_value = messages.len()-i-1;
+                    let index_value = messages.len() -i - 1;
                     //println!("{:?}",index_value);
-                    if index_value <= messages.len(){
-                        accumulator_2 += pk.Y_j_1_to_n[index_value].scalar_mul_const_time(&c[i]);
-                    } else {
-                        accumulator_2 += pk.Y_k_nplus2_to_2n[index_value].scalar_mul_const_time(&c[i]);
-                    }
+                    accumulator_2 += pk.Y_j_1_to_n[index_value].scalar_mul_const_time(&c[i]);
+                    // n + 1 - i as original index, modified to suit value of i
                 }
             }
             let fourth_equation = GT::ate_pairing(&rsig.sigma_4, &accumulator_2);
-            //println!("{:?}",fourth_equation);
+            //println!("{:?}",third_equation);
+            println!("{:?}",fourth_equation);
             if third_equation == fourth_equation{
                 test_check = true;
                 println!("Passed second test");
@@ -333,6 +333,9 @@ impl RSignature{
         }
         return test_check;
     }
+    // First verification checks out. At least we know for a redacted signature the problem isn't sigma 1 and sigma 2
+    // Given how sigma4 is constructed, unlikely to be source of error. 
+    // So issue is in sigma3 generation or sigma 3 pairing...
 }
 
 impl Signature {
