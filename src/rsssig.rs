@@ -30,22 +30,17 @@ trait Redact{
 //     let mut context_bytes = message.context.into_bytes();
 //     FieldElement;
 // }
+
 // Implement trait to convert from math index starting from 1 to a computational index starting from 0
 impl Redact for Message {
     // RECALL: Index I is the set of stuff we want to keep!
     fn to_redacted_message(&self, index: Vec<usize>) -> RedactedMessage{
-        let mut i = 0; // loop over index i for unredacted parts
-        let mut j: usize = 0; // use it to reference parts of a message 
-        let mut redacted_message :RedactedMessage = vec![None; self.len()]; // create empty vector for message 
-        for _ in 0..self.len(){
+        let mut redacted_message:RedactedMessage = Vec::new();
+        for (i,elem) in self.iter().enumerate(){
             if index.contains(&i){
-                redacted_message[j] = Some(self[j].clone()); // copy unredacted parts of a message
-                i+=1; // increment
-                j += 1; // increment
+                redacted_message.push(Some(elem.clone())); // copy unredacted parts of a message
             } else {
-                redacted_message[j] = None; // message is redacted
-                i += 1; // increment
-                j += 1; // increment         
+                redacted_message.push(None); // message is redacted    
             }
         }
         redacted_message
@@ -304,6 +299,15 @@ mod tests {
     use crate::{keys::keygen, rsssig};
     // For benchmarking
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn to_redacted_message() {
+        let count_msgs = 5;
+        let msgs = (0..count_msgs).map(|_| FieldElement::random()).collect::<Vec<FieldElement>>();
+        let I = [2,3];
+        let rmsgs = (&msgs).to_redacted_message(I.to_vec());
+        assert_eq!(rmsgs,vec![None,Some(msgs[2].clone()),Some(msgs[3].clone()),None,None])
+    }
 
     #[test]
     fn check_exponent() {
