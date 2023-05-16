@@ -18,12 +18,27 @@ pub struct RSignature {
     pub sigma_4: VerkeyGroup,
 }
 
-type Message = [FieldElement];
+
+
+// type Message = [FieldElement];
 type RedactedMessage = Vec<Option<FieldElement>>;
 
-// Methods associated with redaction
-trait Redact{
-    fn to_redacted_message(&self, index: Vec<usize>) -> RedactedMessage;
+/// Impliment a getter method for Vec that indexes into the Vec assuing a 1-indexed vector
+/// (matching the notation in the RSS Scheme defined in https://eprint.iacr.org/2020/856.pdf)
+trait MathIndex<T> {
+    fn at_math_idx(&self, idx:usize) -> &T;
+}
+impl<T> MathIndex<T> for Vec<T> {
+    fn at_math_idx(&self, idx:usize) -> &T {
+        if 0 < idx && idx <= self.len() {
+            &self[idx-1]
+        } else if idx == 0 {
+            panic!("index out of bounds: first element has math index 1");
+        } else {
+            panic!("index out of bounds: the len is {} but the math index is {}", self.len(),idx);
+        }
+        
+    }
 }
 
 // pub fn did_to_fieldelements(message:DiD) -> FieldElement{
@@ -31,20 +46,16 @@ trait Redact{
 //     FieldElement;
 // }
 
-// Implement trait to convert from math index starting from 1 to a computational index starting from 0
-impl Redact for Message {
-    // RECALL: Index I is the set of stuff we want to keep!
-    fn to_redacted_message(&self, index: Vec<usize>) -> RedactedMessage{
-        let mut redacted_message:RedactedMessage = Vec::new();
-        for (i,elem) in self.iter().enumerate(){
-            if index.contains(&i){
-                redacted_message.push(Some(elem.clone())); // copy unredacted parts of a message
-            } else {
-                redacted_message.push(None); // message is redacted    
-            }
+fn to_redacted_message(msg: &[FieldElement], index: Vec<usize>) -> RedactedMessage{
+    let mut redacted_message:RedactedMessage = Vec::new();
+    for i in 1..=msg.len() {
+        if index.contains(&i){
+            redacted_message.push(Some(msg.to_vec().at_math_idx(i).clone())); // copy unredacted parts of a message
+        } else {
+            redacted_message.push(None); // message is redacted    
         }
-        redacted_message
-    } // Works as intended. We input an index I of things we want to keep, and output is correct. 
+    }
+    redacted_message
 }
 
 impl RSignature{
@@ -153,7 +164,7 @@ impl RSignature{
             Y_t_i = pk.Y_j_1_to_n[messages.len()-i-1].clone().scalar_mul_const_time(&t) + Y_mj;
             sigma_3_prime = Y_t_i.scalar_mul_const_time(&c[i]);
         }
-        let redacted_message = messages.to_redacted_message(clone_index);
+        let redacted_message = to_redacted_message(messages,clone_index);
         (RSignature{sigma_1: (sigma_1_prime), sigma_2: (sigma_2_prime), sigma_3: (sigma_3_prime), sigma_4:(sigma_prime_tilde)},  redacted_message)
     }
 
@@ -301,12 +312,34 @@ mod tests {
     use std::time::{Duration, Instant};
 
     #[test]
-    fn to_redacted_message() {
+    fn math_indexing() {
+        let vec = vec![11,22,33];
+        assert_eq!(vec.at_math_idx(1),&11);
+        assert_eq!(vec.at_math_idx(3),&33);
+
+    }
+
+    #[test]
+    #[should_panic = "index out of bounds: the len is 3 but the math index is 4"]
+    fn math_indexing_out_of_bounds() {
+        let vec = vec![11,22,33];
+        vec.at_math_idx(4);
+    }
+
+    #[test]
+    #[should_panic = "index out of bounds: first element has math index 1"]
+    fn math_indexing_zero_panic() {
+        let vec = vec![11,22,33];
+        vec.at_math_idx(0);
+    }
+
+    #[test]
+    fn redact_message() {
         let count_msgs = 5;
         let msgs = (0..count_msgs).map(|_| FieldElement::random()).collect::<Vec<FieldElement>>();
         let I = [2,3];
-        let rmsgs = (&msgs).to_redacted_message(I.to_vec());
-        assert_eq!(rmsgs,vec![None,Some(msgs[2].clone()),Some(msgs[3].clone()),None,None])
+        let rmsgs = to_redacted_message(&msgs, I.to_vec());
+        assert_eq!(rmsgs,vec![None,Some(msgs.at_math_idx(2).clone()),Some(msgs.at_math_idx(3).clone()),None,None])
     }
 
     #[test]
