@@ -137,15 +137,12 @@ impl RSignature{
             vec_not_in_I.push(j);
             }
         }
-
         let mut accumulator = VerkeyGroup::new(); // set to 0 for sum of Y~j mul mj
         for j in &vec_not_in_I{
-                // let Y_tilde_i = ; // select Y~[j]
                 let Y_tilde_i_mj = &pk.Y_tilde_i[*j].scalar_mul_const_time(&messages[*j]); // Y~[j] mul m[j]
                 accumulator += Y_tilde_i_mj; // Sum Y~[i] mul m[j]
-            
         };
-
+        // should be right, so the accumulation error is in sigma3...
         let g_tilde_t = pk.g_tilde.scalar_mul_const_time(&t) ; // g~ mul t
         let sigma_prime_tilde = g_tilde_t + accumulator; // sigma~' = g~ mul t + sum of (Y~[j] mul m[j])
 
@@ -156,7 +153,6 @@ impl RSignature{
         
         let mut c = FieldElementVector::new(messages.len()); // create a vector to store c_i
 
-        let mut i = 0; // create index to find i in Index
         for i in 0..messages.len(){
             if clone_index.contains(&i){
                 let i_index: String = i.to_string(); // convert k to string
@@ -314,10 +310,11 @@ impl RSignature{
             //println!("{:?}",index_clone);
             for i in 0..messages.len(){ // go through everything in index
                 if index_clone.contains(&i){
-                    let index_value = messages.len() -i - 1;
+                    let index_value = messages.len() - i - 1;
                     //println!("{:?}",index_value);
                     accumulator_2 += pk.Y_j_1_to_n[index_value].scalar_mul_const_time(&c[i]);
                     // n + 1 - i as original index, modified to suit value of i
+                    // index never goes beyond 0 to n-1, so error seems to be elsewhere
                 }
             }
             let fourth_equation = GT::ate_pairing(&rsig.sigma_4, &accumulator_2);
