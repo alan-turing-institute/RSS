@@ -18,8 +18,6 @@ pub struct RSignature {
     pub sigma_4: VerkeyGroup,
 }
 
-
-
 // type Message = [FieldElement];
 type RedactedMessage = Vec<Option<FieldElement>>;
 
@@ -46,6 +44,7 @@ impl<T> MathIndex<T> for Vec<T> {
 //     FieldElement;
 // }
 
+//TODO: this is a free-body function for now, until it is clearer how it will be used
 fn to_redacted_message(msg: &[FieldElement], index: Vec<usize>) -> RedactedMessage{
     let mut redacted_message:RedactedMessage = Vec::new();
     for i in 1..=msg.len() {
@@ -61,28 +60,21 @@ fn to_redacted_message(msg: &[FieldElement], index: Vec<usize>) -> RedactedMessa
 impl RSignature{
     // Given a secret key, a message of length n, and the parameters, output a signature and a redacted message
     // Seems correct to me -> I've been printing each output but of course no way to hand-check...
-    pub fn rss_generate_signature(messages: &[FieldElement], sk: &SKrss) -> RSignature{
-        let rss_sigma_1 = SignatureGroup::random(); // Generate sigma1, ok
-        let mut x = sk.x.clone(); // x, ok
-        //println!("{:?}", x);
-        let mut i_exponent = FieldElement::one(); // use as index for y^i
+    pub fn new(messages: &Vec<FieldElement>, sk: &SKrss) -> RSignature {
+        let sigma_1 = SignatureGroup::random(); // Generate sigma1, ok
+
         let mut sum_y_m = FieldElement::new(); // set sum of y^i mul mi at 0 
-        for i in 0..messages.len(){
-            let y_i = FieldElement::pow(&sk.y, &i_exponent); // calculate y^i, ok
-            let y_i_m_i = &messages[i] * &y_i; // Calculate y^i * m_i, ok
+        for i in 1..=messages.len(){
+            let y_i = FieldElement::pow(&sk.y, &FieldElement::from(i as u64)); 
+            let y_i_m_i = messages.at_math_idx(i) * &y_i; // Calculate y^i * m_i, ok
             sum_y_m += y_i_m_i; // accumulate y^i * m_i for different i values, ok
-            i_exponent = i_exponent.add(&FieldElement::one()); // increment i -> usable for 1 to n, ok
         }
-        // println!("{:?}", i_exponent);
-        // sum_y_m seems to be correct index wise...
-        let exponent = &x + &sum_y_m; // x + sum of y^i * m_i, ok
-        //println!("{:?}", x);
-        //println!("{:?}", rss_sigma_1);
-        let rss_sigma_2 =rss_sigma_1.scalar_mul_const_time(&exponent); // Calculate sigma_2 mul (x+sum of (y^i mul m_i)) 
+        let exponent = &sk.x + &sum_y_m; // x + sum of y^i * m_i, ok
+        let sigma_2 = sigma_1.scalar_mul_const_time(&exponent); // Calculate sigma_2 mul (x+sum of (y^i mul m_i)) 
         // RSS Signature is a bit different than the paper - we need the identity in sigma3 and sigma4 as part of verify for
         // unmodified signature
         // signature seems okay, like key generation its a simple case of addition and multiplication with the indexes checking out...
-        RSignature { sigma_1:rss_sigma_1, sigma_2: rss_sigma_2, sigma_3:SignatureGroup::identity(), sigma_4: VerkeyGroup::identity()}
+        RSignature { sigma_1, sigma_2, sigma_3:SignatureGroup::identity(), sigma_4: VerkeyGroup::identity()}
     } // sigma 3 and sigma 4 are correct -> lines up with identity element as needed
 
     // Given a public key, a signature, a message of length n, and an index of things we want to keep, 
@@ -343,12 +335,31 @@ mod tests {
     }
 
     #[test]
+    fn new_RSignature() {
+        let count_msgs = 3; // n
+        let params = Params::new("test".as_bytes());
+        let (sk, _) = rsskeygen(count_msgs, &params);
+        let msgs = (0..count_msgs).map(|_| FieldElement::random()).collect::<Vec<FieldElement>>();
+        let signature = RSignature::new(&msgs, &sk);
+
+        //extract sigma_1 (randomly generated) from RSignature to do tests
+        let sigma_1 = signature.sigma_1;
+        let sigma_2_calc = sigma_1.scalar_mul_const_time(&(
+                            &sk.x 
+                            + &sk.y.pow(&FieldElement::from(1)) * msgs.at_math_idx(1)
+                            + &sk.y.pow(&FieldElement::from(2)) * msgs.at_math_idx(2)
+                            + &sk.y.pow(&FieldElement::from(3)) * msgs.at_math_idx(3)
+                        ));
+        assert_eq!(signature.sigma_2, sigma_2_calc);
+    }
+
+    #[test]
     fn check_exponent() {
         let count_msgs = 1;
         let params = Params::new("test".as_bytes());
         let (sk, pk) = rsskeygen(count_msgs, &params);
         let msgs = (0..count_msgs).map(|_| FieldElement::random()).collect::<Vec<FieldElement>>();
-        let signature = RSignature::rss_generate_signature(&msgs, &sk);
+        let signature = RSignature::new(&msgs, &sk);
         let index = vec![];
         let verify = RSignature::verifyrsignature(pk, signature, &msgs, index);
         //assert_eq!(SignatureGroup::identity(),signature.sigma_3);
@@ -361,7 +372,7 @@ mod tests {
         let params = Params::new("test".as_bytes());
         let (sk, pk) = rsskeygen(count_msgs, &params);
         let msgs = (0..count_msgs).map(|_| FieldElement::random()).collect::<Vec<FieldElement>>();
-        let signature = RSignature::rss_generate_signature(&msgs, &sk);
+        let signature = RSignature::new(&msgs, &sk);
         let index_kept = vec![0,1,2];
         let verify = RSignature::verifyrsignature(pk, signature, &msgs, index_kept);
         println!("{:?}", verify);
@@ -375,7 +386,7 @@ mod tests {
         let params = Params::new("test".as_bytes());
         let (sk, pk) = rsskeygen(count_msgs, &params);
         let msgs = (0..count_msgs).map(|_| FieldElement::random()).collect::<Vec<FieldElement>>();
-        let signature = RSignature::rss_generate_signature(&msgs, &sk);
+        let signature = RSignature::new(&msgs, &sk);
         let index = vec![0];
         let index_clone = index.clone();
         let pk_new = pk.clone();
