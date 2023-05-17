@@ -406,6 +406,44 @@ mod tests {
         );
     }
 
+    #[test]
+    fn verify_imposter_signature() {
+        let n = 3;
+        let params = Params::new("test".as_bytes());
+        let (sk, pk) = rsskeygen(n, &params);
+        let msgs = (0..n)
+            .map(|_| FieldElement::random())
+            .collect::<Vec<FieldElement>>();
+        let sig = RSignature::new(&msgs, &sk);
+
+        // derive redacted sig (redacting first element)
+        let I = [2,3];
+        let (rsig, _) = sig.derive_signature(&pk, &msgs, &I);
+
+        // verify expecting [1,2]
+        let I_prime = [1,2];
+        assert_eq!(
+            RSignature::verifyrsignature(&pk, &rsig, &msgs, &I_prime),
+            RSVerifyResult::VerificationFailure("equality 1 failed during verification".to_string())
+        );
+
+        // verify expecting full signature [1,2,3]
+        let I_full = [1,2,3];
+        assert_eq!(
+            RSignature::verifyrsignature(&pk, &rsig, &msgs, &I_full),
+            RSVerifyResult::VerificationFailure("equality 1 failed during verification".to_string())
+        );
+
+        // verfiy against different msgs for correct indicies
+        let msgs_prime = (0..n)
+            .map(|_| FieldElement::random())
+            .collect::<Vec<FieldElement>>();
+        assert_eq!(
+            RSignature::verifyrsignature(&pk, &rsig, &msgs_prime, &I),
+            RSVerifyResult::VerificationFailure("equality 1 failed during verification".to_string())
+        );
+    }
+
     // #[test]
     // fn test_generatedid(){
     //     let example_id  = DiD{
