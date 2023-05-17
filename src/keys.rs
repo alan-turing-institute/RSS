@@ -32,6 +32,7 @@ pub struct PKrss {
     pub g_tilde: VerkeyGroup,
     pub Y_j_1_to_n: Vec<SignatureGroup>,
     pub Y_k_nplus2_to_2n: Vec<SignatureGroup>,
+    pub Y_i: Vec<Option<SignatureGroup>>,
     pub X_tilde: VerkeyGroup,
     pub Y_tilde_i: Vec<VerkeyGroup>,
 } // Public key is a a group element X~, a vector Y~ of group elements
@@ -122,7 +123,7 @@ pub fn rsskeygen(count_messages: usize, params: &Params) -> (SKrss, PKrss) {
     }
     //println!("{:?}",Y_k_nplus2_to_2n.len()); // Length seems correct (n+2) to 2n inclusive. 
     // secret key: {x,y} public key: {g, g~, Yi (i=1...n), Yi (i=n+2...2n), X~, Y~}
-   (SKrss {x , y}, PKrss {g , g_tilde , Y_j_1_to_n , Y_k_nplus2_to_2n , X_tilde , Y_tilde_i})
+   (SKrss {x , y}, PKrss {g , g_tilde , Y_j_1_to_n , Y_k_nplus2_to_2n , Y_i:Vec::new(), X_tilde , Y_tilde_i})
 }
 // RSS
 
