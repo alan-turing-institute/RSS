@@ -47,19 +47,6 @@ pub enum RSVerifyResult {
 //     FieldElement;
 // }
 
-//TODO: this is a free-body function for now, until it is clearer how it will be used
-fn to_redacted_message(msg: &[FieldElement], index: &[usize]) -> RedactedMessage {
-    let mut redacted_message: RedactedMessage = Vec::new();
-    for i in 1..=msg.len() {
-        if index.contains(&i) {
-            redacted_message.push(Some(msg.to_vec().at_math_idx(i).clone())); // copy unredacted parts of a message
-        } else {
-            redacted_message.push(None); // message is redacted
-        }
-    }
-    redacted_message
-}
-
 impl RSignature {
     // Given a secret key, a message of length n, and the parameters, output a signature and a redacted message
     // Seems correct to me -> I've been printing each output but of course no way to hand-check...
@@ -153,7 +140,7 @@ impl RSignature {
                         .expect("Elements will be Some() for all i in I"),
                 );
         }
-        let redacted_message = to_redacted_message(messages, I);
+        let redacted_message = RSignature::_redact_message(messages, I);
         (
             RSignature {
                 sigma_1: (sigma_1_prime),
@@ -163,35 +150,6 @@ impl RSignature {
             },
             redacted_message,
         )
-    }
-
-    fn _hashed_exponents(
-        n: usize,
-        sigma_1: &SignatureGroup,
-        sigma_2: &SignatureGroup,
-        sigma_tilde: &VerkeyGroup,
-        I: &[usize],
-    ) -> Vec<Option<FieldElement>> {
-        let sigma_1_string = sigma_1.to_string(); // convert sigma1' to string
-        let sigma_2_string = sigma_2.to_string(); // convert sigma2' to string
-        let sigma_tilde_string = sigma_tilde.to_string(); // convert sigma~' to string
-        let index_string = (&I).into_iter().map(|i| i.to_string()).collect::<String>(); // convert each element of index to string
-
-        let mut c: Vec<Option<FieldElement>> = Vec::new(); // create a vector to store c_i
-        for i in 1..=n {
-            if (&I).contains(&i) {
-                let concantenated = String::clone(&sigma_1_string)
-                    + &sigma_2_string
-                    + &sigma_tilde_string
-                    + &index_string
-                    + &i.to_string(); // create concantenation for hash input
-                let concantenated_bytes = concantenated.as_bytes(); // convert hash input to bytes
-                c.push(Some(FieldElement::from_msg_hash(&concantenated_bytes))) // add c_i to a vector
-            } else {
-                c.push(None);
-            }
-        }
-        c
     }
 
     pub fn verifyrsignature(
@@ -248,6 +206,47 @@ impl RSignature {
 
         RSVerifyResult::Valid
     }
+    
+    fn _hashed_exponents(
+        n: usize,
+        sigma_1: &SignatureGroup,
+        sigma_2: &SignatureGroup,
+        sigma_tilde: &VerkeyGroup,
+        I: &[usize],
+    ) -> Vec<Option<FieldElement>> {
+        let sigma_1_string = sigma_1.to_string(); // convert sigma1' to string
+        let sigma_2_string = sigma_2.to_string(); // convert sigma2' to string
+        let sigma_tilde_string = sigma_tilde.to_string(); // convert sigma~' to string
+        let index_string = (&I).into_iter().map(|i| i.to_string()).collect::<String>(); // convert each element of index to string
+
+        let mut c: Vec<Option<FieldElement>> = Vec::new(); // create a vector to store c_i
+        for i in 1..=n {
+            if (&I).contains(&i) {
+                let concantenated = String::clone(&sigma_1_string)
+                    + &sigma_2_string
+                    + &sigma_tilde_string
+                    + &index_string
+                    + &i.to_string(); // create concantenation for hash input
+                let concantenated_bytes = concantenated.as_bytes(); // convert hash input to bytes
+                c.push(Some(FieldElement::from_msg_hash(&concantenated_bytes))) // add c_i to a vector
+            } else {
+                c.push(None);
+            }
+        }
+        c
+    }
+
+    fn _redact_message(msg: &[FieldElement], index: &[usize]) -> RedactedMessage {
+        let mut redacted_message: RedactedMessage = Vec::new();
+        for i in 1..=msg.len() {
+            if index.contains(&i) {
+                redacted_message.push(Some(msg.to_vec().at_math_idx(i).clone())); // copy unredacted parts of a message
+            } else {
+                redacted_message.push(None); // message is redacted
+            }
+        }
+        redacted_message
+    }
 }
 
 #[cfg(test)]
@@ -283,7 +282,7 @@ mod tests {
             .map(|_| FieldElement::random())
             .collect::<Vec<FieldElement>>();
         let I = [2, 3];
-        let rmsgs = to_redacted_message(&msgs, &I);
+        let rmsgs = RSignature::_redact_message(&msgs, &I);
         assert_eq!(
             rmsgs,
             vec![
