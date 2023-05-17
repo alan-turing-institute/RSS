@@ -140,7 +140,7 @@ impl RSignature {
                         .expect("Elements will be Some() for all i in I"),
                 );
         }
-        let redacted_message = RSignature::_redact_message(messages, I);
+        let redacted_message = RSignature::redact_message(messages, I);
         (
             RSignature {
                 sigma_1: (sigma_1_prime),
@@ -236,7 +236,7 @@ impl RSignature {
         c
     }
 
-    fn _redact_message(msg: &[FieldElement], index: &[usize]) -> RedactedMessage {
+    pub fn redact_message(msg: &[FieldElement], index: &[usize]) -> RedactedMessage {
         let mut redacted_message: RedactedMessage = Vec::new();
         for i in 1..=msg.len() {
             if index.contains(&i) {
@@ -282,7 +282,7 @@ mod tests {
             .map(|_| FieldElement::random())
             .collect::<Vec<FieldElement>>();
         let I = [2, 3];
-        let rmsgs = RSignature::_redact_message(&msgs, &I);
+        let rmsgs = RSignature::redact_message(&msgs, &I);
         assert_eq!(
             rmsgs,
             vec![
