@@ -22,7 +22,7 @@ type RedactedMessage = Vec<Option<FieldElement>>;
 
 /// Impliment a getter method for Vec that indexes into the Vec assuing a 1-indexed vector
 /// (matching the notation in the RSS Scheme defined in https://eprint.iacr.org/2020/856.pdf)
-trait MathIndex<T> {
+pub trait MathIndex<T> {
     fn at_math_idx(&self, idx: usize) -> &T;
 }
 impl<T> MathIndex<T> for Vec<T> {
