@@ -39,7 +39,8 @@ impl<T> MathIndex<T> for Vec<T> {
 pub enum RSVerifyResult {
     Valid,
     InvalidSignature(String),
-    VerificationFailure(String),
+    VerificationFailure1(String),
+    VerificationFailure2(String),
 }
 
 // pub fn did_to_fieldelements(message:DiD) -> FieldElement{
@@ -158,7 +159,6 @@ impl RSignature {
         idxs: &[usize],
     ) -> RSVerifyResult {
         if rsig.sigma_1 == SignatureGroup::identity() {
-            // check if sigma3 = identity
             return RSVerifyResult::InvalidSignature(
                 "sigma_1 component of signature must not be Identity".to_string(),
             );
@@ -174,7 +174,7 @@ impl RSignature {
         }
 
         if GT::ate_pairing(&rhs_1_a, &rsig.sigma_1) != GT::ate_pairing(&pk.g_tilde, &rsig.sigma_2) {
-            return RSVerifyResult::VerificationFailure(
+            return RSVerifyResult::VerificationFailure1(
                 "equality 1 failed during verification".to_string(),
             );
         }
@@ -198,8 +198,8 @@ impl RSignature {
         }
 
         if GT::ate_pairing(&pk.g_tilde, &rsig.sigma_3) != GT::ate_pairing(&rsig.sigma_4, &lhs_2_b) {
-            return RSVerifyResult::VerificationFailure(
-                "equality 1 failed during verification".to_string(),
+            return RSVerifyResult::VerificationFailure2(
+                "equality 2 failed during verification".to_string(),
             );
         }
 
@@ -410,7 +410,7 @@ mod tests {
     }
 
     #[test]
-    fn verify_imposter_signature() {
+    fn verify_imposter_signature_wrong_idxs() {
         let n = 3;
         let params = Params::new("test".as_bytes());
         let (sk, pk) = rsskeygen(n, &params);
@@ -427,19 +427,49 @@ mod tests {
         let idxs_prime = [1, 2];
         assert_eq!(
             RSignature::verifyrsignature(&pk, &rsig, &msgs, &idxs_prime),
-            RSVerifyResult::VerificationFailure(
+            RSVerifyResult::VerificationFailure1(
                 "equality 1 failed during verification".to_string()
             )
         );
+    }
+
+    #[test]
+    fn verify_imposter_signature_expecting_full_sig() {
+        let n = 3;
+        let params = Params::new("test".as_bytes());
+        let (sk, pk) = rsskeygen(n, &params);
+        let msgs = (0..n)
+            .map(|_| FieldElement::random())
+            .collect::<Vec<FieldElement>>();
+        let sig = RSignature::new(&msgs, &sk);
+
+        // derive redacted sig (redacting first element)
+        let idxs = [2, 3];
+        let (rsig, _) = sig.derive_signature(&pk, &msgs, &idxs);
 
         // verify expecting full signature [1,2,3]
         let I_full = [1, 2, 3];
         assert_eq!(
             RSignature::verifyrsignature(&pk, &rsig, &msgs, &I_full),
-            RSVerifyResult::VerificationFailure(
+            RSVerifyResult::VerificationFailure1(
                 "equality 1 failed during verification".to_string()
             )
         );
+    }
+
+    #[test]
+    fn verify_imposter_signature_wrong_msgs() {
+        let n = 3;
+        let params = Params::new("test".as_bytes());
+        let (sk, pk) = rsskeygen(n, &params);
+        let msgs = (0..n)
+            .map(|_| FieldElement::random())
+            .collect::<Vec<FieldElement>>();
+        let sig = RSignature::new(&msgs, &sk);
+
+        // derive redacted sig (redacting first element)
+        let idxs = [2, 3];
+        let (rsig, _) = sig.derive_signature(&pk, &msgs, &idxs);
 
         // verfiy against different msgs for correct indicies
         let msgs_prime = (0..n)
@@ -447,24 +477,34 @@ mod tests {
             .collect::<Vec<FieldElement>>();
         assert_eq!(
             RSignature::verifyrsignature(&pk, &rsig, &msgs_prime, &idxs),
-            RSVerifyResult::VerificationFailure(
+            RSVerifyResult::VerificationFailure1(
                 "equality 1 failed during verification".to_string()
             )
         );
     }
 
-    // #[test]
-    // fn test_generatedid(){
-    //     let example_id  = DiD{
-    //         context: vec![String::from("https://www.w3.org/2018/credentials/v1"), String::from("https://schema.org/")],
-    //         id: String::from("http://example.edu/credentials/332"),
-    //         type_field: vec![String::from("VerifiableCredential"), String::from("IdentityCredential")],
-    //         issuer: String::from("did:example:123456789abcdefghi"),
-    //         issuance_date: String::from("2017-02-24T19:73:24Z"),
-    //         credential_subject: [String::from("J. Doe");{String::from("10 Rue de Chose"); String::from("98052"); String::from("Paris");
-    //         String::from("FR")},String::from("1989-03-15"),]
-    //     };
-    //     println!("{:?}",example_id);
-    // }
-    // https://hackmd.io/UJFBOl2DToSbFjFoEoMbOA?view
+    #[test]
+    fn verify_on_subset_of_redacted() {
+        let n = 3;
+        let params = Params::new("test".as_bytes());
+        let (sk, pk) = rsskeygen(n, &params);
+        let msgs = (0..n)
+            .map(|_| FieldElement::random())
+            .collect::<Vec<FieldElement>>();
+        let sig = RSignature::new(&msgs, &sk);
+
+        // derive redacted sig (redacting first element)
+        let idxs = [2, 3];
+        let (rsig, _) = sig.derive_signature(&pk, &msgs, &idxs);
+
+        // verify a claim that all is readacted expect 2
+        // using a signature derived on 2,3
+        let idxs_prime_prime = [2];
+        assert_eq!(
+            RSignature::verifyrsignature(&pk, &rsig, &msgs, &idxs_prime_prime),
+            RSVerifyResult::VerificationFailure1(
+                "equality 1 failed during verification".to_string()
+            )
+        );
+    }
 }
