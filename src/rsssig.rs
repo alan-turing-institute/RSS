@@ -48,77 +48,76 @@ pub enum RSVerifyResult {
 // }
 
 impl RSignature {
-    // Given a secret key, a message of length n, and the parameters, output a signature and a redacted message
-    // Seems correct to me -> I've been printing each output but of course no way to hand-check...
+    // Given a secret key, a message of length n, and the parameters, output a signature and a 
+    // redacted message
     pub fn new(messages: &Vec<FieldElement>, sk: &SKrss) -> RSignature {
-        let sigma_1 = SignatureGroup::random(); // Generate sigma1, ok
+        let sigma_1 = SignatureGroup::random();
 
-        let mut sum_y_m = FieldElement::new(); // set sum of y^i mul mi at 0
+        let mut sum_y_m = FieldElement::new();
         for i in 1..=messages.len() {
             let y_i = FieldElement::pow(&sk.y, &FieldElement::from(i as u64));
-            let y_i_m_i = messages.at_math_idx(i) * &y_i; // Calculate y^i * m_i, ok
-            sum_y_m += y_i_m_i; // accumulate y^i * m_i for different i values, ok
+            let y_i_m_i = messages.at_math_idx(i) * &y_i; 
+            sum_y_m += y_i_m_i;
         }
-        let exponent = &sk.x + &sum_y_m; // x + sum of y^i * m_i, ok
-        let sigma_2 = sigma_1.scalar_mul_const_time(&exponent); // Calculate sigma_2 mul (x+sum of (y^i mul m_i))
-                                                                // RSS Signature is a bit different than the paper - we need the identity in sigma3 and sigma4 as part of verify for
-                                                                // unmodified signature
-                                                                // signature seems okay, like key generation its a simple case of addition and multiplication with the indexes checking out...
+        let exponent = &sk.x + &sum_y_m;
+        let sigma_2 = sigma_1.scalar_mul_const_time(&exponent);
+    
         RSignature {
             sigma_1,
             sigma_2,
             sigma_3: SignatureGroup::identity(),
             sigma_4: VerkeyGroup::identity(),
         }
-    } // sigma 3 and sigma 4 are correct -> lines up with identity element as needed
+    }
 
-    // Given a public key, a signature, a message of length n, and an index of things we want to keep,
-    // output a derived signature and redacted message
+    // Given a public key, a signature, a message of length n, and an index of things we want to
+    // keep, output a derived signature and redacted message
     pub fn derive_signature(
         &self,
         pk: &PKrss,
         messages: &Vec<FieldElement>,
-        I: &[usize],
+        idxs: &[usize],
     ) -> (RSignature, RedactedMessage) {
-        let r = FieldElement::random(); // Generate r
-        let t = FieldElement::random(); // Generate t
-        let sigma_1_prime = self.sigma_1.scalar_mul_const_time(&r); // sigma'1 = sigma1 * r
-        let sigma_2_r = self.sigma_2.scalar_mul_const_time(&r); // sigma2 mul r
-        let sigma_1_prime_t = sigma_1_prime.scalar_mul_const_time(&t); // sigma'1 mul t
-        let sigma_2_prime = sigma_2_r + sigma_1_prime_t; // sigma'2 = (sigma2 mul r) + (sigma'1 mul t)
+        let r = FieldElement::random();
+        let t = FieldElement::random();
+        let sigma_1_prime = self.sigma_1.scalar_mul_const_time(&r);
+        let sigma_2_r = self.sigma_2.scalar_mul_const_time(&r);
+        let sigma_1_prime_t = sigma_1_prime.scalar_mul_const_time(&t);
+        let sigma_2_prime = sigma_2_r + sigma_1_prime_t;
 
-        let mut I_prime: Vec<usize> = Vec::new(); // compliment of I
+        // compliment of idxs
+        let mut idxs_prime: Vec<usize> = Vec::new();
         for j in 1..=messages.len() {
-            if !(I).contains(&j) {
-                I_prime.push(j);
+            if !(idxs).contains(&j) {
+                idxs_prime.push(j);
             }
         }
 
         // sigma_tilde_prime = g_tilde^t + Sum_over_j(  Y_tilde[j] * m[j]  )
-        let mut sigma_tilde_prime = VerkeyGroup::new(); // set accumulator to zero
+        let mut sigma_tilde_prime = VerkeyGroup::new();
         sigma_tilde_prime += pk.g_tilde.scalar_mul_const_time(&t);
-        for j in &I_prime {
+        for j in &idxs_prime {
             sigma_tilde_prime += &pk
                 .Y_tilde_i
                 .at_math_idx(*j)
                 .scalar_mul_const_time(messages.at_math_idx(*j));
         }
 
-        let c = RSignature::_hashed_exponents(
+        let c = RSignature::hashed_exponents(
             messages.len(),
             &sigma_1_prime,
             &sigma_2_prime,
             &sigma_tilde_prime,
-            I,
+            idxs,
         );
 
-        let mut sigma_3_prime = SignatureGroup::new(); // create an empty element for sigma_3
-                                                       //println!("{:?}", c);
-                                                       // NOTE: i is only for 1 to n, but we've been working with 0<=i<n. I changed Y^t_n+1-i to Y^t_n-i to account for this.
-        let n = messages.len(); // following notation in paper
-        for i in I {
-            let mut Y_mj = SignatureGroup::new(); // create blank to store Y^mj
-            for j in &I_prime {
+        let mut sigma_3_prime = SignatureGroup::new();
+
+        // following notation in paper
+        let n = messages.len();
+        for i in idxs {
+            let mut Y_mj = SignatureGroup::new();
+            for j in &idxs_prime {
                 Y_mj += pk
                     .Y_i
                     .at_math_idx(n + 1 - i + j)
@@ -137,10 +136,10 @@ impl RSignature {
                 .scalar_mul_const_time(
                     &c.at_math_idx(*i)
                         .to_owned()
-                        .expect("Elements will be Some() for all i in I"),
+                        .expect("Elements will be Some() for all i in idxs"),
                 );
         }
-        let redacted_message = RSignature::redact_message(messages, I);
+        let redacted_message = RSignature::redact_message(messages, idxs);
         (
             RSignature {
                 sigma_1: (sigma_1_prime),
@@ -156,7 +155,7 @@ impl RSignature {
         pk: &PKrss,
         rsig: &RSignature,
         messages: &Vec<FieldElement>,
-        I: &[usize],
+        idxs: &[usize],
     ) -> RSVerifyResult {
         if rsig.sigma_1 == SignatureGroup::identity() {
             // check if sigma3 = identity
@@ -167,7 +166,7 @@ impl RSignature {
 
         // check equation 1:  e(rhs_1_a, sigma_1) == e(g_tilde, sigma_2)
         let mut rhs_1_a = &pk.X_tilde + &rsig.sigma_4;
-        for i in I {
+        for i in idxs {
             rhs_1_a += pk
                 .Y_tilde_i
                 .at_math_idx(*i)
@@ -184,8 +183,8 @@ impl RSignature {
         // Given unredacted case, rhs and lhs of equation 2 are both zero
         let n = messages.len();
         let mut lhs_2_b = SignatureGroup::new();
-        let c = RSignature::_hashed_exponents(n, &rsig.sigma_1, &rsig.sigma_2, &rsig.sigma_4, &I);
-        for i in I {
+        let c = RSignature::hashed_exponents(n, &rsig.sigma_1, &rsig.sigma_2, &rsig.sigma_4, &idxs);
+        for i in idxs {
             lhs_2_b += pk
                 .Y_i
                 .at_math_idx(n + 1 - i)
@@ -194,7 +193,7 @@ impl RSignature {
                 .scalar_mul_const_time(
                     &c.at_math_idx(*i)
                         .to_owned()
-                        .expect("Elements will be Some() for all i in I"),
+                        .expect("Elements will be Some() for all i in idxs"),
                 )
         }
 
@@ -206,29 +205,32 @@ impl RSignature {
 
         RSVerifyResult::Valid
     }
-    
-    fn _hashed_exponents(
+
+    fn hashed_exponents(
         n: usize,
         sigma_1: &SignatureGroup,
         sigma_2: &SignatureGroup,
         sigma_tilde: &VerkeyGroup,
-        I: &[usize],
+        idxs: &[usize],
     ) -> Vec<Option<FieldElement>> {
-        let sigma_1_string = sigma_1.to_string(); // convert sigma1' to string
-        let sigma_2_string = sigma_2.to_string(); // convert sigma2' to string
-        let sigma_tilde_string = sigma_tilde.to_string(); // convert sigma~' to string
-        let index_string = (&I).into_iter().map(|i| i.to_string()).collect::<String>(); // convert each element of index to string
+        let sigma_1_string = sigma_1.to_string();
+        let sigma_2_string = sigma_2.to_string();
+        let sigma_tilde_string = sigma_tilde.to_string();
+        let index_string = (&idxs)
+            .into_iter()
+            .map(|i| i.to_string())
+            .collect::<String>();
 
-        let mut c: Vec<Option<FieldElement>> = Vec::new(); // create a vector to store c_i
+        let mut c: Vec<Option<FieldElement>> = Vec::new();
         for i in 1..=n {
-            if (&I).contains(&i) {
+            if (&idxs).contains(&i) {
                 let concantenated = String::clone(&sigma_1_string)
                     + &sigma_2_string
                     + &sigma_tilde_string
                     + &index_string
-                    + &i.to_string(); // create concantenation for hash input
-                let concantenated_bytes = concantenated.as_bytes(); // convert hash input to bytes
-                c.push(Some(FieldElement::from_msg_hash(&concantenated_bytes))) // add c_i to a vector
+                    + &i.to_string();
+                let concantenated_bytes = concantenated.as_bytes();
+                c.push(Some(FieldElement::from_msg_hash(&concantenated_bytes)));
             } else {
                 c.push(None);
             }
@@ -240,9 +242,9 @@ impl RSignature {
         let mut redacted_message: RedactedMessage = Vec::new();
         for i in 1..=msg.len() {
             if index.contains(&i) {
-                redacted_message.push(Some(msg.to_vec().at_math_idx(i).clone())); // copy unredacted parts of a message
+                redacted_message.push(Some(msg.to_vec().at_math_idx(i).clone()));
             } else {
-                redacted_message.push(None); // message is redacted
+                redacted_message.push(None);
             }
         }
         redacted_message
@@ -281,8 +283,8 @@ mod tests {
         let msgs = (0..count_msgs)
             .map(|_| FieldElement::random())
             .collect::<Vec<FieldElement>>();
-        let I = [2, 3];
-        let rmsgs = RSignature::redact_message(&msgs, &I);
+        let idxs = [2, 3];
+        let rmsgs = RSignature::redact_message(&msgs, &idxs);
         assert_eq!(
             rmsgs,
             vec![
@@ -322,9 +324,9 @@ mod tests {
         let sigma_1 = &SignatureGroup::random();
         let sigma_2 = &SignatureGroup::random();
         let sigma_tilde = &VerkeyGroup::random();
-        let I = [2, 3];
+        let idxs = [2, 3];
 
-        let c = RSignature::_hashed_exponents(n, sigma_1, sigma_2, sigma_tilde, &I);
+        let c = RSignature::hashed_exponents(n, sigma_1, sigma_2, sigma_tilde, &idxs);
         let c_calc = vec![
             None,
             Some(FieldElement::from_msg_hash(
@@ -356,10 +358,9 @@ mod tests {
             .map(|_| FieldElement::random())
             .collect::<Vec<FieldElement>>();
         let sig = RSignature::new(&msgs, &sk);
-        let I = [1, 2, 3]; // all elements of message
-                           // verify sig
+        let idxs = [1, 2, 3];
         assert_eq!(
-            RSignature::verifyrsignature(&pk, &sig, &msgs, &I),
+            RSignature::verifyrsignature(&pk, &sig, &msgs, &idxs),
             RSVerifyResult::Valid
         );
     }
@@ -373,14 +374,16 @@ mod tests {
             .map(|_| FieldElement::random())
             .collect::<Vec<FieldElement>>();
         let sig = RSignature::new(&msgs, &sk);
-        let I = [1, 2, 3]; // all elements of message
+        
+        // all elements of message
+        let idxs = [1, 2, 3];
 
         // derive a redacted sig without reacting any elemets
-        let (rsig, _) = sig.derive_signature(&pk, &msgs, &I);
+        let (rsig, _) = sig.derive_signature(&pk, &msgs, &idxs);
 
         // verify rsig
         assert_eq!(
-            RSignature::verifyrsignature(&pk, &rsig, &msgs, &I),
+            RSignature::verifyrsignature(&pk, &rsig, &msgs, &idxs),
             RSVerifyResult::Valid
         );
     }
@@ -396,12 +399,12 @@ mod tests {
         let sig = RSignature::new(&msgs, &sk);
 
         // derive redacted sig (redacting first element)
-        let I = [2, 3];
-        let (rsig, _) = sig.derive_signature(&pk, &msgs, &I);
+        let idxs = [2, 3];
+        let (rsig, _) = sig.derive_signature(&pk, &msgs, &idxs);
 
         // verify
         assert_eq!(
-            RSignature::verifyrsignature(&pk, &rsig, &msgs, &I),
+            RSignature::verifyrsignature(&pk, &rsig, &msgs, &idxs),
             RSVerifyResult::Valid
         );
     }
@@ -417,21 +420,25 @@ mod tests {
         let sig = RSignature::new(&msgs, &sk);
 
         // derive redacted sig (redacting first element)
-        let I = [2,3];
-        let (rsig, _) = sig.derive_signature(&pk, &msgs, &I);
+        let idxs = [2, 3];
+        let (rsig, _) = sig.derive_signature(&pk, &msgs, &idxs);
 
         // verify expecting [1,2]
-        let I_prime = [1,2];
+        let idxs_prime = [1, 2];
         assert_eq!(
-            RSignature::verifyrsignature(&pk, &rsig, &msgs, &I_prime),
-            RSVerifyResult::VerificationFailure("equality 1 failed during verification".to_string())
+            RSignature::verifyrsignature(&pk, &rsig, &msgs, &idxs_prime),
+            RSVerifyResult::VerificationFailure(
+                "equality 1 failed during verification".to_string()
+            )
         );
 
         // verify expecting full signature [1,2,3]
-        let I_full = [1,2,3];
+        let I_full = [1, 2, 3];
         assert_eq!(
             RSignature::verifyrsignature(&pk, &rsig, &msgs, &I_full),
-            RSVerifyResult::VerificationFailure("equality 1 failed during verification".to_string())
+            RSVerifyResult::VerificationFailure(
+                "equality 1 failed during verification".to_string()
+            )
         );
 
         // verfiy against different msgs for correct indicies
@@ -439,8 +446,10 @@ mod tests {
             .map(|_| FieldElement::random())
             .collect::<Vec<FieldElement>>();
         assert_eq!(
-            RSignature::verifyrsignature(&pk, &rsig, &msgs_prime, &I),
-            RSVerifyResult::VerificationFailure("equality 1 failed during verification".to_string())
+            RSignature::verifyrsignature(&pk, &rsig, &msgs_prime, &idxs),
+            RSVerifyResult::VerificationFailure(
+                "equality 1 failed during verification".to_string()
+            )
         );
     }
 
