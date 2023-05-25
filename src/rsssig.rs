@@ -2,8 +2,11 @@ use crate::keys::{PKrss, SKrss};
 use crate::{SignatureGroup, VerkeyGroup, GT};
 use amcl_wrapper::field_elem::FieldElement;
 use amcl_wrapper::group_elem::GroupElement;
+use amcl_wrapper::constants::{GroupG1_SIZE,GroupG2_SIZE};
+use std::collections::HashMap;
+use std::iter::zip;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct RSignature {
     pub sigma_1: SignatureGroup,
     pub sigma_2: SignatureGroup,
@@ -249,6 +252,65 @@ impl RSignature {
         }
         redacted_message
     }
+
+    pub fn encode_json_msgs(data: &[String]) -> (Vec<FieldElement>, Vec<usize>, HashMap<String,usize>) {
+        let mut idxs = Vec::new();
+        let msgs = data.iter().enumerate().map(|(i,m)| {
+                // split value from keys to test for empty values
+                let value = m.splitn(2,":").nth(1).unwrap();
+                if value.len() == 0 {
+                    FieldElement::zero()
+                } else {
+                    // push "math index" to idxs
+                    idxs.push(i+1);
+                    FieldElement::from_msg_hash(m.as_bytes())
+                }
+            }).collect();
+        
+        // collect zipped iterators into hash map
+        let math_idx_lookup = zip(
+                data.to_owned().iter().map(|kv| kv.split(":").next().unwrap().to_string()),
+                (0..data.len()).map(|i| i+1 ).collect::<Vec<usize>>()
+            ).collect();
+        
+        (msgs,idxs,math_idx_lookup)
+    }
+    
+    /// Byte representation of the signature
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+        bytes.append(&mut self.sigma_1.to_bytes());
+        bytes.append(&mut self.sigma_2.to_bytes());
+        bytes.append(&mut self.sigma_3.to_bytes());
+        bytes.append(&mut self.sigma_4.to_bytes());
+        bytes
+    }
+
+    pub fn to_hex(&self) -> String {
+        self.sigma_1.to_hex()
+        + ":" + &self.sigma_2.to_hex()
+        + ":" +  &self.sigma_3.to_hex()
+        + ":" +  &self.sigma_4.to_hex()
+    }
+
+    pub fn from_hex(str_rep: &str) -> RSignature {
+        let mut parts = str_rep.split(':');
+        RSignature {
+            sigma_1: SignatureGroup::from_hex(parts.next().unwrap().to_string()).unwrap(),
+            sigma_2: SignatureGroup::from_hex(parts.next().unwrap().to_string()).unwrap(),
+            sigma_3: SignatureGroup::from_hex(parts.next().unwrap().to_string()).unwrap(),
+            sigma_4: VerkeyGroup::from_hex(parts.next().unwrap().to_string()).unwrap()
+        }
+    }
+
+    pub fn from_bytes(bytes: Vec<u8>) -> RSignature {
+        RSignature {
+            sigma_1: SignatureGroup::from_bytes(&bytes[0..GroupG2_SIZE]).unwrap(),
+            sigma_2: SignatureGroup::from_bytes(&bytes[GroupG2_SIZE..2*GroupG2_SIZE]).unwrap(),
+            sigma_3: SignatureGroup::from_bytes(&bytes[2*GroupG2_SIZE..3*GroupG2_SIZE]).unwrap(),
+            sigma_4: VerkeyGroup::from_bytes(&bytes[3*GroupG2_SIZE..3*GroupG2_SIZE+GroupG1_SIZE]).unwrap()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -295,6 +357,38 @@ mod tests {
                 None
             ]
         )
+    }
+
+    #[test]
+    fn encode_decode_unredacted_signature() {
+        let n = 3;
+        let params = Params::new("test".as_bytes());
+        let (sk,_) = rsskeygen(n, &params);
+        let msgs = (0..n)
+            .map(|_| FieldElement::random())
+            .collect::<Vec<FieldElement>>();
+        let sig = RSignature::new(&msgs, &sk);
+
+        let e_sig = sig.to_hex();
+        let d_sig = RSignature::from_hex(&e_sig);
+
+        assert_eq!(sig, d_sig);
+    }
+
+    #[test]
+    fn encode_decode_redacted_signature() {
+        let n = 3;
+        let params = Params::new("test".as_bytes());
+        let (sk, pk) = rsskeygen(n, &params);
+        let msgs = (0..n)
+            .map(|_| FieldElement::random())
+            .collect::<Vec<FieldElement>>();
+        let sig = RSignature::new(&msgs, &sk);
+
+        // derive redacted sig (redacting first element)
+        let idxs = [2, 3];
+        let (rsig, _) = RSignature::from_hex(&sig.to_hex()).derive_signature(&pk, &msgs, &idxs);
+        assert_eq!(rsig.sigma_2, RSignature::from_hex(&rsig.to_hex()).sigma_2);
     }
 
     #[test]
@@ -505,6 +599,38 @@ mod tests {
             RSVerifyResult::VerificationFailure1(
                 "equality 1 failed during verification".to_string()
             )
+        );
+    }
+
+    #[test]
+    fn verify_with_access_to_unredacted_msgs_only() {
+        let n = 3;
+        let params = Params::new("test".as_bytes());
+        let (sk, pk) = rsskeygen(n, &params);
+
+        let data = ["k_one:v_one_abc123:!%".to_owned(),"k_two:v_two_abc123:!%".to_owned(),"k_three:v_three_abc123:!%".to_owned()];
+        let (msgs,_,math_idx_lookup) = RSignature::encode_json_msgs(&data);
+        let sig = RSignature::new(&msgs, &sk);
+
+        // derive redacted sig (redacting first element)
+        let idxs = ["k_two","k_three"].map(|key| math_idx_lookup[key]);
+        let (rsig, _) = sig.derive_signature(&pk, &msgs, &idxs);
+
+        // assume verifier only has access to unredacted msgs
+        let redacted_data = ["k_one:".to_owned(),"k_two:v_two_abc123:!%".to_owned(),"k_three:v_three_abc123:!%".to_owned()];
+
+        let (verifiers_msgs, verifiers_idxs, _) = RSignature::encode_json_msgs(&redacted_data);
+
+        assert_eq!(idxs.to_vec(),verifiers_idxs);
+
+        assert_ne!(verifiers_msgs.at_math_idx(1),msgs.at_math_idx(1));
+
+        assert_eq!(verifiers_msgs.at_math_idx(2),msgs.at_math_idx(2));
+        assert_eq!(verifiers_msgs.at_math_idx(3),msgs.at_math_idx(3));
+
+        assert_eq!(
+            RSignature::verifyrsignature(&pk, &rsig, &verifiers_msgs, &verifiers_idxs),
+            RSVerifyResult::Valid
         );
     }
 }
