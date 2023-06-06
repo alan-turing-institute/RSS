@@ -1,17 +1,19 @@
-use super::flat_vc::{FlatVC,Address, FlatCredentialSubject};
+use canonical_flatten::CanonicalFlatten;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, CanonicalFlatten)]
 #[serde(rename_all = "camelCase")]
 pub struct VC {
-    // context : Vec<String>,
+    #[serde(rename = "@context")]
+    pub context : Vec<String>,
     pub credential_subject : CredentialSubject,
     pub id : String,
     pub issuance_date : String,
     pub issuer : String,
-    // _type : Vec<String>
+    #[serde(rename = "type")]
+    pub _type : Vec<String>
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, CanonicalFlatten)]
 #[serde(rename_all = "camelCase")]
 pub struct CredentialSubject {
     pub address : Address,
@@ -19,17 +21,85 @@ pub struct CredentialSubject {
     pub name : String
 }
 
-impl Into<FlatVC> for VC {
-    fn into(self) -> FlatVC {
-        FlatVC {
-            credential_subject : FlatCredentialSubject {
-                address : self.credential_subject.address,
-                birth_date : self.credential_subject.birth_date,
-                name : self.credential_subject.name
+#[derive(Debug, Serialize, Deserialize, Clone, CanonicalFlatten)]
+#[serde(rename_all = "camelCase")]
+pub struct Address {
+    pub address_country : String,
+    pub address_locality : String,
+    pub postal_code : String,
+    pub street_address : String
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserialise() {
+        let _: VC = serde_json::from_str(r##"{
+            "@context" : [
+                "https://www.w3.org/2018/credentials/v1",
+                "https://schema.org/"
+            ],
+            "credentialSubject" : {
+               "address" : {
+                  "addressCountry" : "UK",
+                  "addressLocality" : "London",
+                  "postalCode" : "SE1 3WY",
+                  "streetAddress" : "10 Main Street"
+               },
+               "birthDate" : "1989-03-15",
+               "name" : "J. Doe"
             },
-            id : self.id,
-            issuance_date : self.issuance_date,
-            issuer : self.issuer
-        }
+            "id" : "http://example.edu/credentials/332",
+            "issuanceDate" : "2020-08-19T21:41:50Z",
+            "issuer" : "did:key:z6MkpbgE27YYYpSF8hd7ipazeJxiUGMEzQFT5EgN46TDwAeU",
+            "type" : [
+                "VerifiableCredential",
+                "IdentityCredential"
+            ]
+            }"##).unwrap();
+    }
+
+    #[test]
+    fn flatten() {
+        let vc: VC = serde_json::from_str(r##"{
+            "@context" : [
+                "https://www.w3.org/2018/credentials/v1",
+                "https://schema.org/"
+            ],
+            "credentialSubject" : {
+               "address" : {
+                  "addressCountry" : "UK",
+                  "addressLocality" : "London",
+                  "postalCode" : "SE1 3WY",
+                  "streetAddress" : "10 Main Street"
+               },
+               "birthDate" : "1989-03-15",
+               "name" : "J. Doe"
+            },
+            "id" : "http://example.edu/credentials/332",
+            "issuanceDate" : "2020-08-19T21:41:50Z",
+            "issuer" : "did:key:z6MkpbgE27YYYpSF8hd7ipazeJxiUGMEzQFT5EgN46TDwAeU",
+            "type" : [
+                "VerifiableCredential",
+                "IdentityCredential"
+            ]
+            }"##).unwrap();
+        
+        let flat_vc = vc.flatten();
+        assert_eq!(vec![
+            "context:[\"https://www.w3.org/2018/credentials/v1\", \"https://schema.org/\"]",
+            "id:\"http://example.edu/credentials/332\"",
+            "issuance_date:\"2020-08-19T21:41:50Z\"",
+            "issuer:\"did:key:z6MkpbgE27YYYpSF8hd7ipazeJxiUGMEzQFT5EgN46TDwAeU\"",
+            "_type:[\"VerifiableCredential\", \"IdentityCredential\"]",
+            "birth_date:\"1989-03-15\"",
+            "name:\"J. Doe\"",
+            "address_country:\"UK\"",
+            "address_locality:\"London\"",
+            "postal_code:\"SE1 3WY\"",
+            "street_address:\"10 Main Street\"",
+        ], flat_vc);
     }
 }
