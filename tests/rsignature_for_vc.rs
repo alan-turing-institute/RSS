@@ -46,7 +46,7 @@ fn issuers_actions() -> (SignedVC, PKrss) {
         vc,
         proof : full_sig.to_hex()
     };
-
+    println!("{:#?}",signed_vc);
     (signed_vc, issuer_pk)
 }
 
