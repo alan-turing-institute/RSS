@@ -90,16 +90,16 @@ mod tests {
         let flat_vc = vc.flatten();
         assert_eq!(vec![
             "context:[\"https://www.w3.org/2018/credentials/v1\", \"https://schema.org/\"]",
-            "id:\"http://example.edu/credentials/332\"",
-            "issuance_date:\"2020-08-19T21:41:50Z\"",
-            "issuer:\"did:key:z6MkpbgE27YYYpSF8hd7ipazeJxiUGMEzQFT5EgN46TDwAeU\"",
+            "address_country:UK",
+            "address_locality:London",
+            "postal_code:SE1 3WY",
+            "street_address:10 Main Street",
+            "birth_date:1989-03-15",
+            "name:J. Doe",
+            "id:http://example.edu/credentials/332",
+            "issuance_date:2020-08-19T21:41:50Z",
+            "issuer:did:key:z6MkpbgE27YYYpSF8hd7ipazeJxiUGMEzQFT5EgN46TDwAeU",
             "_type:[\"VerifiableCredential\", \"IdentityCredential\"]",
-            "birth_date:\"1989-03-15\"",
-            "name:\"J. Doe\"",
-            "address_country:\"UK\"",
-            "address_locality:\"London\"",
-            "postal_code:\"SE1 3WY\"",
-            "street_address:\"10 Main Street\"",
         ], flat_vc);
     }
 }
