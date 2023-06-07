@@ -258,7 +258,7 @@ impl RSignature {
         let msgs = data.iter().enumerate().map(|(i,m)| {
                 // split value from keys to test for empty values
                 let value = m.splitn(2,":").nth(1).unwrap();
-                if value.len() == 0 {
+                if value.len() == 0 || value == "[]" {
                     FieldElement::zero()
                 } else {
                     // push "math index" to idxs
