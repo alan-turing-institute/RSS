@@ -1,10 +1,8 @@
-use amcl_wrapper::field_elem::FieldElement;
 use ps_sig::keys::{rsskeygen,Params, PKrss};
 use ps_sig::message_structure::message_encode::MessageEncode;
 use ps_sig::message_structure::signed_vc::SignedVC;
 use ps_sig::message_structure::vc::{VC,CredentialSubject, Address};
 use ps_sig::rsssig::{RSignature, RSVerifyResult};
-use canonical_flatten::CanonicalFlatten;
 
 
 
@@ -27,13 +25,15 @@ fn test_rsignature_for_vc() {
 fn issuers_actions() -> (SignedVC, PKrss) {
     // The issuer generates the standart (possibly nested) vc
     let vc: VC = vc_example_1();
+
+    // vc is flattened and encoded into a vec of FieldElements
     let encoded_msgs = vc.encode();
 
     // TODO Discussion about issuer public and private key depends on length of msgs!
     let params = Params::new("test".as_bytes());
     let (issuer_sk,issuer_pk) = rsskeygen(encoded_msgs.as_slice().len(), &params);
 
-    // the issuer constructs a full RSignature on the resulting vector of field elements
+    // the issuer constructs a full RSignature
     let full_sig = RSignature::new(encoded_msgs.as_slice(), &issuer_sk);
 
     // placing the signature in the VC’s proof field (as in the signed VC in Example 1).
@@ -48,12 +48,14 @@ fn issuers_actions() -> (SignedVC, PKrss) {
 }
 
 fn holders_actions(signed_full_vc: SignedVC, issuer_pk: &PKrss) -> SignedVC {
-    // decodes the byte representation of the signature
+    // decodes the hex representation of the signature
     let full_sig = RSignature::from_hex(&signed_full_vc.proof);
 
-    // takes the VC and canonicalises & flattens it
+    // takes the VC and flattens and encodes
     let encoded_msgs = signed_full_vc.vc.encode();
 
+    // generate a lookup table that maps the field names of the vc to their indexes in the 
+    // flattened, encoded vc
     let math_idx_lookup = signed_full_vc.vc.field_idx_map();
 
     // Suppose the length of the field element vector is n and the holder wishes to disclose 
@@ -93,18 +95,13 @@ fn holders_actions(signed_full_vc: SignedVC, issuer_pk: &PKrss) -> SignedVC {
 }
 
 fn verifiers_actions(signed_redacted_vc: SignedVC, issuer_pk: &PKrss) -> RSVerifyResult {
-    // The verifier:
-    // takes the redacted VC and canonicalises & flattens it
-    let flat_vc: Vec<String> = signed_redacted_vc.vc.flatten();
-
-    // assigns an index to each key-value pair in the resulting flattened VC (just as the issuer did)
+    // flattens and encodes the redacted vc
     // identifies which fields are not redacted, and their indices (which will be the set idxs)
     // hashes each of the non-redacted messages and places the hashes at the correct indices in 
     // a vector of total length n.
-    // places a dummy value (e.g. field element zero) in the vector of hashes at all indices except 
-    // those in idxs
+    // when the vc is partially redacted, the encode function places a dummy value (e.g. field
+    // element zero) in the vector of hashes at all indices except those in idxs
     let encoded_msgs = signed_redacted_vc.vc.encode();
-
     let math_idx_lookup = signed_redacted_vc.vc.field_idx_map();
 
     // verifier can check that exactly the right fields are populated in the redacted vc
