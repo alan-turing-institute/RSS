@@ -11,9 +11,6 @@ pub struct RSignature {
     pub sigma_4: VerkeyGroup,
 }
 
-// type Message = [FieldElement];
-type RedactedMessage = Vec<Option<FieldElement>>;
-
 /// Impliment a getter method for Vec that indexes into the Vec assuing a 1-indexed vector
 /// (matching the notation in the RSS Scheme defined in https://eprint.iacr.org/2020/856.pdf)
 pub trait MathIndex<T> {
@@ -94,7 +91,7 @@ impl RSignature {
         pk: &PKrss,
         messages: &[FieldElement],
         idxs: &[usize],
-    ) -> (RSignature, RedactedMessage) {
+    ) -> RSignature {
         let r = FieldElement::random();
         let t = FieldElement::random();
         let sigma_1_prime = self.sigma_1.scalar_mul_const_time(&r);
@@ -156,16 +153,13 @@ impl RSignature {
                         .expect("Elements will be Some() for all i in idxs"),
                 );
         }
-        let redacted_message = RSignature::redact_message(messages, idxs);
-        (
-            RSignature {
-                sigma_1: (sigma_1_prime),
-                sigma_2: (sigma_2_prime),
-                sigma_3: (sigma_3_prime),
-                sigma_4: (sigma_tilde_prime),
-            },
-            redacted_message,
-        )
+
+        RSignature {
+            sigma_1: (sigma_1_prime),
+            sigma_2: (sigma_2_prime),
+            sigma_3: (sigma_3_prime),
+            sigma_4: (sigma_tilde_prime),
+        }
     }
 
     pub fn verifyrsignature(
@@ -253,18 +247,6 @@ impl RSignature {
         }
         c
     }
-
-    pub fn redact_message(msg: &[FieldElement], index: &[usize]) -> RedactedMessage {
-        let mut redacted_message: RedactedMessage = Vec::new();
-        for i in 1..=msg.len() {
-            if index.contains(&i) {
-                redacted_message.push(Some(msg.to_vec().at_math_idx(i).clone()));
-            } else {
-                redacted_message.push(None);
-            }
-        }
-        redacted_message
-    }
 }
 
 #[cfg(test)]
@@ -291,26 +273,6 @@ mod tests {
     fn math_indexing_zero_panic() {
         let vec = vec![11, 22, 33];
         vec.at_math_idx(0);
-    }
-
-    #[test]
-    fn redact_message() {
-        let count_msgs = 5;
-        let msgs = (0..count_msgs)
-            .map(|_| FieldElement::random())
-            .collect::<Vec<FieldElement>>();
-        let idxs = [2, 3];
-        let rmsgs = RSignature::redact_message(&msgs, &idxs);
-        assert_eq!(
-            rmsgs,
-            vec![
-                None,
-                Some(msgs.at_math_idx(2).clone()),
-                Some(msgs.at_math_idx(3).clone()),
-                None,
-                None
-            ]
-        )
     }
 
     #[test]
@@ -395,7 +357,7 @@ mod tests {
         let idxs = [1, 2, 3];
 
         // derive a redacted sig without reacting any elemets
-        let (rsig, _) = sig.derive_signature(&pk, &msgs, &idxs);
+        let rsig = sig.derive_signature(&pk, &msgs, &idxs);
 
         // verify rsig
         assert_eq!(
@@ -416,7 +378,7 @@ mod tests {
 
         // derive redacted sig (redacting first element)
         let idxs = [2, 3];
-        let (rsig, _) = sig.derive_signature(&pk, &msgs, &idxs);
+        let rsig = sig.derive_signature(&pk, &msgs, &idxs);
 
         // verify
         assert_eq!(
@@ -437,7 +399,7 @@ mod tests {
 
         // derive redacted sig (redacting first element)
         let idxs = [2, 3];
-        let (rsig, _) = sig.derive_signature(&pk, &msgs, &idxs);
+        let rsig = sig.derive_signature(&pk, &msgs, &idxs);
 
         // verify expecting [1,2]
         let idxs_prime = [1, 2];
@@ -461,7 +423,7 @@ mod tests {
 
         // derive redacted sig (redacting first element)
         let idxs = [2, 3];
-        let (rsig, _) = sig.derive_signature(&pk, &msgs, &idxs);
+        let rsig = sig.derive_signature(&pk, &msgs, &idxs);
 
         // verify expecting full signature [1,2,3]
         let I_full = [1, 2, 3];
@@ -485,7 +447,7 @@ mod tests {
 
         // derive redacted sig (redacting first element)
         let idxs = [2, 3];
-        let (rsig, _) = sig.derive_signature(&pk, &msgs, &idxs);
+        let rsig = sig.derive_signature(&pk, &msgs, &idxs);
 
         // verfiy against different msgs for correct indicies
         let msgs_prime = (0..n)
@@ -511,7 +473,7 @@ mod tests {
 
         // derive redacted sig (redacting first element)
         let idxs = [2, 3];
-        let (rsig, _) = sig.derive_signature(&pk, &msgs, &idxs);
+        let rsig = sig.derive_signature(&pk, &msgs, &idxs);
 
         // verify a claim that all is readacted expect 2
         // using a signature derived on 2,3
