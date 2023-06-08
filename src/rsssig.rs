@@ -22,6 +22,22 @@ type RedactedMessage = Vec<Option<FieldElement>>;
 pub trait MathIndex<T> {
     fn at_math_idx(&self, idx: usize) -> &T;
 }
+impl<T> MathIndex<T> for &[T] {
+    fn at_math_idx(&self, idx: usize) -> &T {
+        if 0 < idx && idx <= self.len() {
+            &self[idx - 1]
+        } else if idx == 0 {
+            panic!("index out of bounds: first element has math index 1");
+        } else {
+            panic!(
+                "index out of bounds: the len is {} but the math index is {}",
+                self.len(),
+                idx
+            );
+        }
+    }
+}
+
 impl<T> MathIndex<T> for Vec<T> {
     fn at_math_idx(&self, idx: usize) -> &T {
         if 0 < idx && idx <= self.len() {
@@ -54,7 +70,7 @@ pub enum RSVerifyResult {
 impl RSignature {
     // Given a secret key, a message of length n, and the parameters, output a signature and a 
     // redacted message
-    pub fn new(messages: &Vec<FieldElement>, sk: &SKrss) -> RSignature {
+    pub fn new(messages: &[FieldElement], sk: &SKrss) -> RSignature {
         let sigma_1 = SignatureGroup::random();
 
         let mut sum_y_m = FieldElement::new();
@@ -79,7 +95,7 @@ impl RSignature {
     pub fn derive_signature(
         &self,
         pk: &PKrss,
-        messages: &Vec<FieldElement>,
+        messages: &[FieldElement],
         idxs: &[usize],
     ) -> (RSignature, RedactedMessage) {
         let r = FieldElement::random();
@@ -158,7 +174,7 @@ impl RSignature {
     pub fn verifyrsignature(
         pk: &PKrss,
         rsig: &RSignature,
-        messages: &Vec<FieldElement>,
+        messages: &[FieldElement],
         idxs: &[usize],
     ) -> RSVerifyResult {
         if rsig.sigma_1 == SignatureGroup::identity() {
