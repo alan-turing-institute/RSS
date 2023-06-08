@@ -63,7 +63,7 @@ fn holders_actions(signed_full_vc: SignedVC, issuer_pk: &PKrss) -> SignedVC {
     let idxs = ["context","address_country","name"].map(|key| math_idx_lookup[key]);
 
     // the holder constructs a derived RSignature, given idxs.
-    let (rsig,_) = full_sig.derive_signature(issuer_pk, encoded_msgs.as_slice(), &idxs);
+    let rsig = full_sig.derive_signature(issuer_pk, encoded_msgs.as_slice(), &idxs);
 
     // The holder then constructs (and presents) a redacted VC by:
     // taking the VC template

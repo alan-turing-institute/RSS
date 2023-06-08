@@ -365,7 +365,7 @@ mod tests {
 
         // derive redacted sig (redacting first element)
         let idxs = [2, 3];
-        let (rsig, _) = RSignature::from_hex(&sig.to_hex()).derive_signature(&pk, &msgs, &idxs);
+        let rsig = RSignature::from_hex(&sig.to_hex()).derive_signature(&pk, &msgs, &idxs);
         assert_eq!(rsig.sigma_2, RSignature::from_hex(&rsig.to_hex()).sigma_2);
     }
 
@@ -397,7 +397,7 @@ mod tests {
 
         // derive redacted sig (redacting first element)
         let idxs = [2, 3];
-        let (rsig, _) = RSignature::from_bytes(&sig.to_bytes()).derive_signature(&pk, &msgs, &idxs);
+        let rsig = RSignature::from_bytes(&sig.to_bytes()).derive_signature(&pk, &msgs, &idxs);
         assert_eq!(rsig.sigma_2, RSignature::from_bytes(&rsig.to_bytes()).sigma_2);
     }
 
@@ -624,7 +624,7 @@ mod tests {
 
         // derive redacted sig (redacting first element)
         let idxs = ["k_two","k_three"].map(|key| math_idx_lookup[key]);
-        let (rsig, _) = sig.derive_signature(&pk, &msgs, &idxs);
+        let rsig = sig.derive_signature(&pk, &msgs, &idxs);
 
         // assume verifier only has access to unredacted msgs
         let redacted_data = ["k_one:".to_owned(),"k_two:v_two_abc123:!%".to_owned(),"k_three:v_three_abc123:!%".to_owned()];
@@ -681,7 +681,7 @@ mod tests {
             .collect::<Vec<FieldElement>>();
         let sig = RSignature::new(&msgs, &sk);
         let idxs = [1, 2, 3];
-        let (rsig,_) = sig.derive_signature(&pk, &msgs, &idxs);
+        let rsig = sig.derive_signature(&pk, &msgs, &idxs);
         let e_sig = rsig.to_bytes();
         let d_sig = RSignature::from_bytes(&e_sig);
 
@@ -706,7 +706,7 @@ mod tests {
             .collect::<Vec<FieldElement>>();
         let sig = RSignature::new(&msgs, &sk);
         let idxs = [2, 3];
-        let (rsig,_) = sig.derive_signature(&pk, &msgs, &idxs);
+        let rsig = sig.derive_signature(&pk, &msgs, &idxs);
         let e_sig = rsig.to_bytes();
         let d_sig = RSignature::from_bytes(&e_sig);
 
@@ -736,7 +736,7 @@ mod tests {
         );
 
         let idxs = [2, 3];
-        let (rsig,_) = sig.derive_signature(&pk, &msgs, &idxs);
+        let rsig = sig.derive_signature(&pk, &msgs, &idxs);
         let e_sig = rsig.to_hex();
         let d_sig = RSignature::from_hex(&e_sig);
 
