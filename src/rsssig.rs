@@ -250,29 +250,6 @@ impl RSignature {
         }
         c
     }
-
-    pub fn encode_json_msgs(data: &[String]) -> (Vec<FieldElement>, Vec<usize>, HashMap<String,usize>) {
-        let mut idxs = Vec::new();
-        let msgs = data.iter().enumerate().map(|(i,m)| {
-                // split value from keys to test for empty values
-                let value = m.splitn(2,":").nth(1).unwrap();
-                if value.len() == 0 || value == "[]" {
-                    FieldElement::zero()
-                } else {
-                    // push "math index" to idxs
-                    idxs.push(i+1);
-                    FieldElement::from_msg_hash(m.as_bytes())
-                }
-            }).collect();
-        
-        // collect zipped iterators into hash map
-        let math_idx_lookup = zip(
-                data.to_owned().iter().map(|kv| kv.split(":").next().unwrap().to_string()),
-                (0..data.len()).map(|i| i+1 ).collect::<Vec<usize>>()
-            ).collect();
-        
-        (msgs,idxs,math_idx_lookup)
-    }
     
     /// Byte representation of the signature
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -314,7 +291,7 @@ impl RSignature {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keys::{rsskeygen, Params};
+    use crate::{keys::{rsskeygen, Params}, message_structure::message_encode::MessageEncode};
 
     #[test]
     fn math_indexing() {
@@ -609,38 +586,6 @@ mod tests {
             RSVerifyResult::VerificationFailure1(
                 "equality 1 failed during verification".to_string()
             )
-        );
-    }
-
-    #[test]
-    fn verify_with_access_to_unredacted_msgs_only() {
-        let n = 3;
-        let params = Params::new("test".as_bytes());
-        let (sk, pk) = rsskeygen(n, &params);
-
-        let data = ["k_one:v_one_abc123:!%".to_owned(),"k_two:v_two_abc123:!%".to_owned(),"k_three:v_three_abc123:!%".to_owned()];
-        let (msgs,_,math_idx_lookup) = RSignature::encode_json_msgs(&data);
-        let sig = RSignature::new(&msgs, &sk);
-
-        // derive redacted sig (redacting first element)
-        let idxs = ["k_two","k_three"].map(|key| math_idx_lookup[key]);
-        let rsig = sig.derive_signature(&pk, &msgs, &idxs);
-
-        // assume verifier only has access to unredacted msgs
-        let redacted_data = ["k_one:".to_owned(),"k_two:v_two_abc123:!%".to_owned(),"k_three:v_three_abc123:!%".to_owned()];
-
-        let (verifiers_msgs, verifiers_idxs, _) = RSignature::encode_json_msgs(&redacted_data);
-
-        assert_eq!(idxs.to_vec(),verifiers_idxs);
-
-        assert_ne!(verifiers_msgs.at_math_idx(1),msgs.at_math_idx(1));
-
-        assert_eq!(verifiers_msgs.at_math_idx(2),msgs.at_math_idx(2));
-        assert_eq!(verifiers_msgs.at_math_idx(3),msgs.at_math_idx(3));
-
-        assert_eq!(
-            RSignature::verifyrsignature(&pk, &rsig, &verifiers_msgs, &verifiers_idxs),
-            RSVerifyResult::Valid
         );
     }
 
