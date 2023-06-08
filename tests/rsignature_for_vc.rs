@@ -4,8 +4,6 @@ use ps_sig::message_structure::signed_vc::SignedVC;
 use ps_sig::message_structure::vc::{VC,CredentialSubject, Address};
 use ps_sig::rsssig::{RSignature, RSVerifyResult};
 
-
-
 #[test]
 fn test_rsignature_for_vc() {
     let (signed_full_vc,issuer_pk) = issuers_actions();
