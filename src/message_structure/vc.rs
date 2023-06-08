@@ -1,4 +1,5 @@
 use canonical_flatten::CanonicalFlatten;
+use crate::message_structure::message_encode::MessageEncode;
 
 #[derive(Clone, Debug, Serialize, Deserialize, CanonicalFlatten)]
 #[serde(rename_all = "camelCase")]
@@ -29,6 +30,8 @@ pub struct Address {
     pub postal_code : String,
     pub street_address : String
 }
+
+impl MessageEncode for VC {}
 
 #[cfg(test)]
 mod tests {

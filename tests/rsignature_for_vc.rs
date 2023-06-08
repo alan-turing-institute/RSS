@@ -46,7 +46,8 @@ fn issuers_actions() -> (SignedVC, PKrss) {
         vc,
         proof : full_sig.to_hex()
     };
-    println!("{:#?}",signed_vc);
+
+    println!("{}",serde_json::to_string_pretty(&signed_vc).unwrap());
     (signed_vc, issuer_pk)
 }
 
