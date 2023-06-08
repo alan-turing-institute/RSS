@@ -1,4 +1,6 @@
+use amcl_wrapper::field_elem::FieldElement;
 use ps_sig::keys::{rsskeygen,Params, PKrss};
+use ps_sig::message_structure::message_encode::MessageEncode;
 use ps_sig::message_structure::signed_vc::SignedVC;
 use ps_sig::message_structure::vc::{VC,CredentialSubject, Address};
 use ps_sig::rsssig::{RSignature, RSVerifyResult};
@@ -25,20 +27,14 @@ fn test_rsignature_for_vc() {
 fn issuers_actions() -> (SignedVC, PKrss) {
     // The issuer generates the standart (possibly nested) vc
     let vc: VC = vc_example_1();
-    let flat_vc: Vec<String> = vc.flatten();
+    let encoded_msgs = vc.encode();
 
     // TODO Discussion about issuer public and private key depends on length of msgs!
     let params = Params::new("test".as_bytes());
-    let (issuer_sk,issuer_pk) = rsskeygen(flat_vc.len(), &params);
-
-    // hashing each plaintext key-value attribute message
-    // mapping each hash to a field element
-    // assigning an index to each field element that matches the position of the corresponding 
-    // key-value message in the canonical & flattened VC
-    let (msgs,_,_) = RSignature::encode_json_msgs(&flat_vc);
+    let (issuer_sk,issuer_pk) = rsskeygen(encoded_msgs.as_slice().len(), &params);
 
     // the issuer constructs a full RSignature on the resulting vector of field elements
-    let full_sig = RSignature::new(&msgs, &issuer_sk);
+    let full_sig = RSignature::new(encoded_msgs.as_slice(), &issuer_sk);
 
     // placing the signature in the VC’s proof field (as in the signed VC in Example 1).
     // then issuing that VC to the holder
@@ -56,24 +52,23 @@ fn holders_actions(signed_full_vc: SignedVC, issuer_pk: &PKrss) -> SignedVC {
     let full_sig = RSignature::from_hex(&signed_full_vc.proof);
 
     // takes the VC and canonicalises & flattens it
-    let flat_vc: Vec<String> = signed_full_vc.vc.flatten();
+    let encoded_msgs = signed_full_vc.vc.encode();
 
-    // encodes the full set of messages and generates an idx lookup
-    let (msgs,_,math_idx_lookup) = RSignature::encode_json_msgs(&flat_vc);
+    let math_idx_lookup = signed_full_vc.vc.field_idx_map();
 
     // Suppose the length of the field element vector is n and the holder wishes to disclose 
     // the information at indices idxs.
     let idxs = ["context","address_country","name"].map(|key| math_idx_lookup[key]);
 
     // the holder constructs a derived RSignature, given idxs.
-    let (rsig,_) = full_sig.derive_signature(issuer_pk, &msgs, &idxs);
+    let (rsig,_) = full_sig.derive_signature(issuer_pk, encoded_msgs.as_slice(), &idxs);
 
     // The holder then constructs (and presents) a redacted VC by:
     // taking the VC template
     // filling in the non-redacted message fields
     // leaving the redacted mesage fields empty
     // placing the derived RSignature in the VC’s proof field.
-    SignedVC {
+    let signed_vc = SignedVC {
         vc : VC {
             context: signed_full_vc.vc.context,
             credential_subject: CredentialSubject {
@@ -92,7 +87,9 @@ fn holders_actions(signed_full_vc: SignedVC, issuer_pk: &PKrss) -> SignedVC {
             _type: vec![]
         },
         proof: rsig.to_hex()
-    }
+    };
+    println!("{}",serde_json::to_string_pretty(&signed_vc).unwrap());
+    signed_vc
 }
 
 fn verifiers_actions(signed_redacted_vc: SignedVC, issuer_pk: &PKrss) -> RSVerifyResult {
@@ -106,10 +103,15 @@ fn verifiers_actions(signed_redacted_vc: SignedVC, issuer_pk: &PKrss) -> RSVerif
     // a vector of total length n.
     // places a dummy value (e.g. field element zero) in the vector of hashes at all indices except 
     // those in idxs
-    let (msgs,idxs,math_idx_lookup) = RSignature::encode_json_msgs(&flat_vc);
+    let encoded_msgs = signed_redacted_vc.vc.encode();
+
+    let math_idx_lookup = signed_redacted_vc.vc.field_idx_map();
 
     // verifier can check that exactly the right fields are populated in the redacted vc
-    assert_eq!(idxs,["context","address_country","name"].map(|key| math_idx_lookup[key]));
+    assert_eq!(
+        encoded_msgs.infered_idxs,
+        ["context","address_country","name"].map(|key| math_idx_lookup[key])
+    );
 
     // performs the RSS verification procedure on this vector of hashes.
     // If the derived RSignature is valid, the verifier concludes that the issuer signed a vector 
@@ -117,7 +119,7 @@ fn verifiers_actions(signed_redacted_vc: SignedVC, issuer_pk: &PKrss) -> RSVerif
     // messages provided by the holder.
     let rsig = RSignature::from_hex(&signed_redacted_vc.proof);
 
-    RSignature::verifyrsignature(issuer_pk, &rsig, &msgs, &idxs)
+    RSignature::verifyrsignature(issuer_pk, &rsig, encoded_msgs.as_slice(), &encoded_msgs.infered_idxs)
 }
 
 fn vc_example_1() -> VC {
@@ -148,12 +150,14 @@ fn vc_example_1() -> VC {
 
 fn verify_full_vc(signed_full_vc: SignedVC, issuer_pk: &PKrss) -> RSVerifyResult {
     let full_sig = RSignature::from_hex(&signed_full_vc.proof);
-    let flat_vc: Vec<String> = signed_full_vc.vc.flatten();
-    let (msgs,_,_) = RSignature::encode_json_msgs(&flat_vc);
-    assert_eq!(11, msgs.len());
 
     // given full msgs length = 11
     let idxs = [1,2,3,4,5,6,7,8,9,10,11];
     
-    RSignature::verifyrsignature(issuer_pk, &full_sig, &msgs, &idxs)
+    RSignature::verifyrsignature(
+        issuer_pk,
+        &full_sig,
+        signed_full_vc.vc.encode().as_slice(),
+        &idxs
+    )
 }

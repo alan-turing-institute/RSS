@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::iter::zip;
 
 pub trait MessageEncode: CanonicalFlatten {
-    fn encode(&self) -> Vec<FieldElement> {
+    fn encode(&self) -> EncodedMessages {
         let data = self.flatten();
         let mut idxs = Vec::new();
         let msgs = data.iter().enumerate().map(|(i,m)| {
@@ -18,7 +18,7 @@ pub trait MessageEncode: CanonicalFlatten {
                     FieldElement::from_msg_hash(m.as_bytes())
                 }
             }).collect();
-        msgs
+        EncodedMessages { msgs, infered_idxs: idxs }
     }
 
     fn field_idx_map(&self) -> HashMap<String,usize> {
@@ -26,5 +26,20 @@ pub trait MessageEncode: CanonicalFlatten {
             self.flatten().to_owned().iter().map(|kv| kv.split(":").next().unwrap().to_string()),
             (0..self.flatten().len()).map(|i| i+1 ).collect::<Vec<usize>>()
         ).collect()
+    }
+}
+
+pub struct EncodedMessages {
+    msgs: Vec<FieldElement>,
+    pub infered_idxs: Vec<usize>
+}
+
+impl EncodedMessages {
+    pub fn as_slice(&self) -> &[FieldElement] {
+        &self.msgs
+    }
+
+    pub fn to_vec(&self) -> Vec<FieldElement> {
+        self.msgs.clone()
     }
 }
