@@ -16,6 +16,8 @@ sha2 ="0.10.6"
 hex-literal = "0.3.4"
 serde_json = "1.0.96"
 canonical_flatten = { path = "./canonical_flatten" }
+thiserror = "1.0"
+
 
 [dependencies.amcl_wrapper]
 version = "0.3"

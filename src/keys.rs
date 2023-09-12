@@ -1,10 +1,10 @@
-use std::ops::Add;
-
 use amcl_wrapper::errors::SerzDeserzError;
 use amcl_wrapper::field_elem::FieldElement;
 use amcl_wrapper::group_elem::GroupElement;
 use amcl_wrapper::group_elem_g1::G1;
 use amcl_wrapper::group_elem_g2::G2;
+use std::ops::Add;
+use thiserror::Error;
 
 use crate::errors::PSError;
 use crate::{SignatureGroup, VerkeyGroup};
@@ -36,9 +36,11 @@ pub struct PKrss {
     pub Y_tilde_i: Vec<VerkeyGroup>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
 pub enum PKrssError {
+    #[error("Failed to parse signature parts.")]
     FailedParsingSignatureParts,
+    #[error("Failed parsing Signature Group: {0}")]
     FailedParsingSignatureGroup(SerzDeserzError),
 }
 
