@@ -1,7 +1,6 @@
 use amcl_wrapper::field_elem::FieldElement;
 use canonical_flatten::CanonicalFlatten;
 use std::collections::HashMap;
-use std::error::Error;
 use std::iter::zip;
 
 pub trait MessageEncode: CanonicalFlatten {
@@ -40,51 +39,6 @@ pub trait MessageEncode: CanonicalFlatten {
         )
         .collect()
     }
-}
-
-#[derive(Debug)]
-pub enum RedactError {
-    InvalidSequenceElement(String),
-    MissingKeyInSourceSequence,
-}
-
-pub fn redact(source: Vec<String>, idxs: Vec<usize>) -> Result<Vec<String>, RedactError> {
-    source
-        .iter()
-        .enumerate()
-        .map(|(i, m)| {
-            // redact using math indexing
-            if !idxs.contains(&(i + 1)) {
-                let mut m_vec = m.split(":").collect::<Vec<&str>>();
-                // special case if redacting metadata field (key-value seperates on first colon)
-                if m_vec
-                    .first()
-                    .ok_or(RedactError::InvalidSequenceElement(m.to_owned()))?
-                    == &"metadata"
-                {
-                    return Ok("metadata:".to_string());
-                }
-                // redact value from key value pair
-                let tail = m_vec
-                    .pop()
-                    .ok_or(RedactError::InvalidSequenceElement(m.to_owned()))?;
-                let mut rejoined = m_vec.join(":") + ":";
-                // in the case that this index was an element in an array
-                if tail
-                    .chars()
-                    .next()
-                    .ok_or(RedactError::MissingKeyInSourceSequence)?
-                    == '['
-                {
-                    // include array tag in the key after value has been redacted
-                    rejoined += "["
-                }
-                Ok(rejoined)
-            } else {
-                Ok(m.to_owned())
-            }
-        })
-        .collect::<Result<Vec<String>, RedactError>>()
 }
 
 #[derive(Debug)]
@@ -164,40 +118,6 @@ mod tests {
         .collect();
         let encoded: EncodedMessages = data.into();
         assert_eq!(vec![1, 2, 3, 4, 8], encoded.infered_idxs);
-    }
-
-    #[test]
-    fn test_redact() {
-        let data: Vec<String> = vec![
-            "degree:{college:College of Engineering",
-            "degree:{name:Bachelor of Science and Arts",
-            "degree:{nested:{key:value",
-            "degree:{testArray:[element",
-            "degree:{testArray:[objectInArray:{one:valTwo",
-            "degree:{testArray:[objectInArray:{two:valOne",
-            "degree:{type:Degree Certificate",
-            "familyName:Doe",
-            "givenName:Jane",
-            "metadata:Remove:After:First:Colon",
-        ]
-        .into_iter()
-        .map(|el| el.to_string())
-        .collect();
-        assert_eq!(
-            redact(data, vec![1, 2, 4, 6]).unwrap(),
-            vec![
-                "degree:{college:College of Engineering",
-                "degree:{name:Bachelor of Science and Arts",
-                "degree:{nested:{key:",
-                "degree:{testArray:[element",
-                "degree:{testArray:[objectInArray:{one:",
-                "degree:{testArray:[objectInArray:{two:valOne",
-                "degree:{type:",
-                "familyName:",
-                "givenName:",
-                "metadata:"
-            ]
-        )
     }
 
     #[test]
