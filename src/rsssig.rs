@@ -1,10 +1,9 @@
 use crate::keys::{PKrss, SKrss};
 use crate::{SignatureGroup, VerkeyGroup, GT};
 use amcl_wrapper::constants::{GroupG1_SIZE, GroupG2_SIZE};
+use amcl_wrapper::errors::SerzDeserzError;
 use amcl_wrapper::field_elem::FieldElement;
 use amcl_wrapper::group_elem::GroupElement;
-use std::collections::HashMap;
-use std::iter::zip;
 use thiserror::Error;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -13,6 +12,22 @@ pub struct RSignature {
     pub sigma_2: SignatureGroup,
     pub sigma_3: SignatureGroup,
     pub sigma_4: VerkeyGroup,
+}
+
+#[derive(Clone, Debug, Error)]
+pub enum RSignatureError {
+    /// Failed to parse parts of RSignature from hex.
+    #[error("Failed parsing parts of RSignature from hex.")]
+    FailedParsingHexParts,
+    /// A wrapped SerzDeserzError.
+    #[error("A wrapped SerzDeserzError: {0}")]
+    SerzDeserzError(SerzDeserzError),
+}
+
+impl From<SerzDeserzError> for RSignatureError {
+    fn from(err: SerzDeserzError) -> Self {
+        RSignatureError::SerzDeserzError(err)
+    }
 }
 
 /// Impliment a getter method for Vec that indexes into the Vec assuing a 1-indexed vector
@@ -56,11 +71,11 @@ impl<T> MathIndex<T> for Vec<T> {
 pub enum RSVerifyResult {
     #[error("Signature successfully verified.")]
     Valid,
-    #[error("Invalid RSS signature.")]
+    #[error("Invalid RSS signature: {0}")]
     InvalidSignature(String),
-    #[error("Verification failed on equality 1.")]
+    #[error("Verification failed on equality 1: {0}")]
     VerificationFailure1(String),
-    #[error("Verification failed on equality 2.")]
+    #[error("Verification failed on equality 2: {0}")]
     VerificationFailure2(String),
 }
 
@@ -289,24 +304,41 @@ impl RSignature {
             + &self.sigma_4.to_hex()
     }
 
-    pub fn from_hex(str_rep: &str) -> RSignature {
+    pub fn from_hex(str_rep: &str) -> Result<RSignature, RSignatureError> {
         let mut parts = str_rep.split(':');
-        RSignature {
-            sigma_1: SignatureGroup::from_hex(parts.next().unwrap().to_string()).unwrap(),
-            sigma_2: SignatureGroup::from_hex(parts.next().unwrap().to_string()).unwrap(),
-            sigma_3: SignatureGroup::from_hex(parts.next().unwrap().to_string()).unwrap(),
-            sigma_4: VerkeyGroup::from_hex(parts.next().unwrap().to_string()).unwrap(),
-        }
+        Ok(RSignature {
+            sigma_1: SignatureGroup::from_hex(
+                parts
+                    .next()
+                    .ok_or(RSignatureError::FailedParsingHexParts)?
+                    .to_string(),
+            )?,
+            sigma_2: SignatureGroup::from_hex(
+                parts
+                    .next()
+                    .ok_or(RSignatureError::FailedParsingHexParts)?
+                    .to_string(),
+            )?,
+            sigma_3: SignatureGroup::from_hex(
+                parts
+                    .next()
+                    .ok_or(RSignatureError::FailedParsingHexParts)?
+                    .to_string(),
+            )?,
+            sigma_4: VerkeyGroup::from_hex(
+                parts
+                    .next()
+                    .ok_or(RSignatureError::FailedParsingHexParts)?
+                    .to_string(),
+            )?,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        keys::{rsskeygen, Params},
-        message_structure::message_encode::MessageEncode,
-    };
+    use crate::keys::{rsskeygen, Params};
 
     #[test]
     fn math_indexing() {
@@ -340,7 +372,7 @@ mod tests {
         let sig = RSignature::new(&msgs, &sk);
 
         let e_sig = sig.to_hex();
-        let d_sig = RSignature::from_hex(&e_sig);
+        let d_sig = RSignature::from_hex(&e_sig).unwrap();
 
         assert_eq!(sig, d_sig);
     }
@@ -357,8 +389,13 @@ mod tests {
 
         // derive redacted sig (redacting first element)
         let idxs = [2, 3];
-        let rsig = RSignature::from_hex(&sig.to_hex()).derive_signature(&pk, &msgs, &idxs);
-        assert_eq!(rsig.sigma_2, RSignature::from_hex(&rsig.to_hex()).sigma_2);
+        let rsig = RSignature::from_hex(&sig.to_hex())
+            .unwrap()
+            .derive_signature(&pk, &msgs, &idxs);
+        assert_eq!(
+            rsig.sigma_2,
+            RSignature::from_hex(&rsig.to_hex()).unwrap().sigma_2
+        );
     }
 
     #[test]
@@ -695,7 +732,7 @@ mod tests {
             .collect::<Vec<FieldElement>>();
         let sig = RSignature::new(&msgs, &sk);
         let e_sig = sig.to_hex();
-        let d_sig = RSignature::from_hex(&e_sig);
+        let d_sig = RSignature::from_hex(&e_sig).unwrap();
         let idxs = [1, 2, 3];
         assert_eq!(
             RSignature::verifyrsignature(&pk, &d_sig, &msgs, &idxs),
@@ -705,7 +742,7 @@ mod tests {
         let idxs = [2, 3];
         let rsig = sig.derive_signature(&pk, &msgs, &idxs);
         let e_sig = rsig.to_hex();
-        let d_sig = RSignature::from_hex(&e_sig);
+        let d_sig = RSignature::from_hex(&e_sig).unwrap();
 
         assert_eq!(
             RSignature::verifyrsignature(&pk, &d_sig, &msgs, &idxs),

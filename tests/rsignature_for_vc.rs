@@ -47,7 +47,7 @@ fn issuers_actions() -> (SignedVC, PKrss) {
 
 fn holders_actions(signed_full_vc: SignedVC, issuer_pk: &PKrss) -> SignedVC {
     // decodes the hex representation of the signature
-    let full_sig = RSignature::from_hex(&signed_full_vc.proof);
+    let full_sig = RSignature::from_hex(&signed_full_vc.proof).unwrap();
 
     // takes the VC and flattens and encodes
     let encoded_msgs = signed_full_vc.vc.encode_demo();
@@ -112,7 +112,7 @@ fn verifiers_actions(signed_redacted_vc: SignedVC, issuer_pk: &PKrss) -> RSVerif
     // If the derived RSignature is valid, the verifier concludes that the issuer signed a vector
     // of messages of length n in which the messages at the indices in idxs were identical to the
     // messages provided by the holder.
-    let rsig = RSignature::from_hex(&signed_redacted_vc.proof);
+    let rsig = RSignature::from_hex(&signed_redacted_vc.proof).unwrap();
 
     RSignature::verifyrsignature(
         issuer_pk,
@@ -152,7 +152,7 @@ fn vc_example_1() -> VC {
 }
 
 fn verify_full_vc(signed_full_vc: SignedVC, issuer_pk: &PKrss) -> RSVerifyResult {
-    let full_sig = RSignature::from_hex(&signed_full_vc.proof);
+    let full_sig = RSignature::from_hex(&signed_full_vc.proof).unwrap();
 
     // given full msgs length = 11
     let idxs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
