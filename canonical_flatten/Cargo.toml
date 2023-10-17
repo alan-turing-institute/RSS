@@ -1,0 +1,9 @@
+[package]
+name = "canonical_flatten"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+canonical_flatten_derive = { path = "./canonical_flatten_derive" }

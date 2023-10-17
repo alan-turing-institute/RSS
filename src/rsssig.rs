@@ -1,14 +1,33 @@
 use crate::keys::{PKrss, SKrss};
 use crate::{SignatureGroup, VerkeyGroup, GT};
+use amcl_wrapper::constants::{GroupG1_SIZE, GroupG2_SIZE};
+use amcl_wrapper::errors::SerzDeserzError;
 use amcl_wrapper::field_elem::FieldElement;
 use amcl_wrapper::group_elem::GroupElement;
+use thiserror::Error;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct RSignature {
     pub sigma_1: SignatureGroup,
     pub sigma_2: SignatureGroup,
     pub sigma_3: SignatureGroup,
     pub sigma_4: VerkeyGroup,
+}
+
+#[derive(Clone, Debug, Error)]
+pub enum RSignatureError {
+    /// Failed to parse parts of RSignature from hex.
+    #[error("Failed parsing parts of RSignature from hex.")]
+    FailedParsingHexParts,
+    /// A wrapped SerzDeserzError.
+    #[error("A wrapped SerzDeserzError: {0}")]
+    SerzDeserzError(SerzDeserzError),
+}
+
+impl From<SerzDeserzError> for RSignatureError {
+    fn from(err: SerzDeserzError) -> Self {
+        RSignatureError::SerzDeserzError(err)
+    }
 }
 
 /// Impliment a getter method for Vec that indexes into the Vec assuing a 1-indexed vector
@@ -48,11 +67,15 @@ impl<T> MathIndex<T> for Vec<T> {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Error)]
 pub enum RSVerifyResult {
+    #[error("Signature successfully verified.")]
     Valid,
+    #[error("Invalid RSS signature: {0}")]
     InvalidSignature(String),
+    #[error("Verification failed on equality 1: {0}")]
     VerificationFailure1(String),
+    #[error("Verification failed on equality 2: {0}")]
     VerificationFailure2(String),
 }
 
@@ -62,7 +85,7 @@ pub enum RSVerifyResult {
 // }
 
 impl RSignature {
-    // Given a secret key, a message of length n, and the parameters, output a signature and a 
+    // Given a secret key, a message of length n, and the parameters, output a signature and a
     // redacted message
     pub fn new(messages: &[FieldElement], sk: &SKrss) -> RSignature {
         let sigma_1 = SignatureGroup::random();
@@ -70,12 +93,12 @@ impl RSignature {
         let mut sum_y_m = FieldElement::new();
         for i in 1..=messages.len() {
             let y_i = FieldElement::pow(&sk.y, &FieldElement::from(i as u64));
-            let y_i_m_i = messages.at_math_idx(i) * &y_i; 
+            let y_i_m_i = messages.at_math_idx(i) * &y_i;
             sum_y_m += y_i_m_i;
         }
         let exponent = &sk.x + &sum_y_m;
         let sigma_2 = sigma_1.scalar_mul_const_time(&exponent);
-    
+
         RSignature {
             sigma_1,
             sigma_2,
@@ -247,6 +270,69 @@ impl RSignature {
         }
         c
     }
+
+    /// Byte representation of the signature
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+        bytes.append(&mut self.sigma_1.to_bytes());
+        bytes.append(&mut self.sigma_2.to_bytes());
+        bytes.append(&mut self.sigma_3.to_bytes());
+        bytes.append(&mut self.sigma_4.to_bytes());
+        bytes
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> RSignature {
+        RSignature {
+            sigma_1: SignatureGroup::from_bytes(&bytes[0..GroupG2_SIZE]).unwrap(),
+            sigma_2: SignatureGroup::from_bytes(&bytes[GroupG2_SIZE..2 * GroupG2_SIZE]).unwrap(),
+            sigma_3: SignatureGroup::from_bytes(&bytes[2 * GroupG2_SIZE..3 * GroupG2_SIZE])
+                .unwrap(),
+            sigma_4: VerkeyGroup::from_bytes(
+                &bytes[3 * GroupG2_SIZE..3 * GroupG2_SIZE + GroupG1_SIZE],
+            )
+            .unwrap(),
+        }
+    }
+
+    pub fn to_hex(&self) -> String {
+        self.sigma_1.to_hex()
+            + ":"
+            + &self.sigma_2.to_hex()
+            + ":"
+            + &self.sigma_3.to_hex()
+            + ":"
+            + &self.sigma_4.to_hex()
+    }
+
+    pub fn from_hex(str_rep: &str) -> Result<RSignature, RSignatureError> {
+        let mut parts = str_rep.split(':');
+        Ok(RSignature {
+            sigma_1: SignatureGroup::from_hex(
+                parts
+                    .next()
+                    .ok_or(RSignatureError::FailedParsingHexParts)?
+                    .to_string(),
+            )?,
+            sigma_2: SignatureGroup::from_hex(
+                parts
+                    .next()
+                    .ok_or(RSignatureError::FailedParsingHexParts)?
+                    .to_string(),
+            )?,
+            sigma_3: SignatureGroup::from_hex(
+                parts
+                    .next()
+                    .ok_or(RSignatureError::FailedParsingHexParts)?
+                    .to_string(),
+            )?,
+            sigma_4: VerkeyGroup::from_hex(
+                parts
+                    .next()
+                    .ok_or(RSignatureError::FailedParsingHexParts)?
+                    .to_string(),
+            )?,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -273,6 +359,78 @@ mod tests {
     fn math_indexing_zero_panic() {
         let vec = vec![11, 22, 33];
         vec.at_math_idx(0);
+    }
+
+    #[test]
+    fn hex_encode_decode_unredacted_signature() {
+        let n = 3;
+        let params = Params::new("test".as_bytes());
+        let (sk, _) = rsskeygen(n, &params);
+        let msgs = (0..n)
+            .map(|_| FieldElement::random())
+            .collect::<Vec<FieldElement>>();
+        let sig = RSignature::new(&msgs, &sk);
+
+        let e_sig = sig.to_hex();
+        let d_sig = RSignature::from_hex(&e_sig).unwrap();
+
+        assert_eq!(sig, d_sig);
+    }
+
+    #[test]
+    fn hex_encode_decode_redacted_signature() {
+        let n = 3;
+        let params = Params::new("test".as_bytes());
+        let (sk, pk) = rsskeygen(n, &params);
+        let msgs = (0..n)
+            .map(|_| FieldElement::random())
+            .collect::<Vec<FieldElement>>();
+        let sig = RSignature::new(&msgs, &sk);
+
+        // derive redacted sig (redacting first element)
+        let idxs = [2, 3];
+        let rsig = RSignature::from_hex(&sig.to_hex())
+            .unwrap()
+            .derive_signature(&pk, &msgs, &idxs);
+        assert_eq!(
+            rsig.sigma_2,
+            RSignature::from_hex(&rsig.to_hex()).unwrap().sigma_2
+        );
+    }
+
+    #[test]
+    fn bytes_encode_decode_unredacted_signature() {
+        let n = 3;
+        let params = Params::new("test".as_bytes());
+        let (sk, _) = rsskeygen(n, &params);
+        let msgs = (0..n)
+            .map(|_| FieldElement::random())
+            .collect::<Vec<FieldElement>>();
+        let sig = RSignature::new(&msgs, &sk);
+
+        let e_sig = sig.to_bytes();
+        let d_sig = RSignature::from_bytes(&e_sig);
+
+        assert_eq!(sig, d_sig);
+    }
+
+    #[test]
+    fn bytes_encode_decode_redacted_signature() {
+        let n = 3;
+        let params = Params::new("test".as_bytes());
+        let (sk, pk) = rsskeygen(n, &params);
+        let msgs = (0..n)
+            .map(|_| FieldElement::random())
+            .collect::<Vec<FieldElement>>();
+        let sig = RSignature::new(&msgs, &sk);
+
+        // derive redacted sig (redacting first element)
+        let idxs = [2, 3];
+        let rsig = RSignature::from_bytes(&sig.to_bytes()).derive_signature(&pk, &msgs, &idxs);
+        assert_eq!(
+            rsig.sigma_2,
+            RSignature::from_bytes(&rsig.to_bytes()).sigma_2
+        );
     }
 
     #[test]
@@ -352,7 +510,7 @@ mod tests {
             .map(|_| FieldElement::random())
             .collect::<Vec<FieldElement>>();
         let sig = RSignature::new(&msgs, &sk);
-        
+
         // all elements of message
         let idxs = [1, 2, 3];
 
@@ -483,6 +641,112 @@ mod tests {
             RSVerifyResult::VerificationFailure1(
                 "equality 1 failed during verification".to_string()
             )
+        );
+    }
+
+    #[test]
+    fn verify_full_sig_after_bytes_encode_decode() {
+        // Note: A signature that has undergone a bytes encode/decode only verifies successfully
+        // if it is a full signature, not one generated by .derive_signature()
+
+        let n = 3;
+        let params = Params::new("test".as_bytes());
+        let (sk, pk) = rsskeygen(n, &params);
+        let msgs = (0..n)
+            .map(|_| FieldElement::random())
+            .collect::<Vec<FieldElement>>();
+        let sig = RSignature::new(&msgs, &sk);
+        let idxs = [1, 2, 3];
+        let e_sig = sig.to_bytes();
+        let d_sig = RSignature::from_bytes(&e_sig);
+
+        assert_eq!(
+            RSignature::verifyrsignature(&pk, &d_sig, &msgs, &idxs),
+            RSVerifyResult::Valid
+        );
+    }
+
+    #[test]
+    fn verify_derived_full_sig_after_bytes_encode_decode() {
+        // Note: This test demonstrates that the bytes encode/decode does NOT successfully carry
+        // all of the information of the derived signature, so the verification fails - despite the
+        // encode/decode unit test passing (which tests for equality between the original sig
+        // and the decoded sig)
+
+        let n = 3;
+        let params = Params::new("test".as_bytes());
+        let (sk, pk) = rsskeygen(n, &params);
+        let msgs = (0..n)
+            .map(|_| FieldElement::random())
+            .collect::<Vec<FieldElement>>();
+        let sig = RSignature::new(&msgs, &sk);
+        let idxs = [1, 2, 3];
+        let rsig = sig.derive_signature(&pk, &msgs, &idxs);
+        let e_sig = rsig.to_bytes();
+        let d_sig = RSignature::from_bytes(&e_sig);
+
+        assert_eq!(
+            RSignature::verifyrsignature(&pk, &d_sig, &msgs, &idxs),
+            RSVerifyResult::VerificationFailure2(
+                "equality 2 failed during verification".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn verify_redacted_sig_after_bytes_encode_decode() {
+        // Note: This test demonstrates that the bytes encode/decode does NOT successfully carry
+        // all of the information of the signature, so the verification fails - despite the
+        // encode/decode unit test passing (which tests for equality between the original sig
+        // and the decoded sig)
+
+        let n = 3;
+        let params = Params::new("test".as_bytes());
+        let (sk, pk) = rsskeygen(n, &params);
+        let msgs = (0..n)
+            .map(|_| FieldElement::random())
+            .collect::<Vec<FieldElement>>();
+        let sig = RSignature::new(&msgs, &sk);
+        let idxs = [2, 3];
+        let rsig = sig.derive_signature(&pk, &msgs, &idxs);
+        let e_sig = rsig.to_bytes();
+        let d_sig = RSignature::from_bytes(&e_sig);
+
+        assert_eq!(
+            RSignature::verifyrsignature(&pk, &d_sig, &msgs, &idxs),
+            RSVerifyResult::VerificationFailure2(
+                "equality 2 failed during verification".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn verify_redacted_sig_after_hex_encode_decode() {
+        // Note: In contrast to byte encoding, hex encoding persists all of the information of
+        // derived and underived signatures, and the verification passes.
+        let n = 3;
+        let params = Params::new("test".as_bytes());
+        let (sk, pk) = rsskeygen(n, &params);
+        let msgs = (0..n)
+            .map(|_| FieldElement::random())
+            .collect::<Vec<FieldElement>>();
+        let sig = RSignature::new(&msgs, &sk);
+        let e_sig = sig.to_hex();
+        let d_sig = RSignature::from_hex(&e_sig).unwrap();
+        let idxs = [1, 2, 3];
+        assert_eq!(
+            RSignature::verifyrsignature(&pk, &d_sig, &msgs, &idxs),
+            RSVerifyResult::Valid
+        );
+
+        let idxs = [2, 3];
+        let rsig = sig.derive_signature(&pk, &msgs, &idxs);
+        let e_sig = rsig.to_hex();
+        let d_sig = RSignature::from_hex(&e_sig).unwrap();
+
+        assert_eq!(
+            RSignature::verifyrsignature(&pk, &d_sig, &msgs, &idxs),
+            RSVerifyResult::Valid
         );
     }
 }
