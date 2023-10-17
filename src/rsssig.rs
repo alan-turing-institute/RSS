@@ -79,11 +79,6 @@ pub enum RSVerifyResult {
     VerificationFailure2(String),
 }
 
-// pub fn did_to_fieldelements(message:DiD) -> FieldElement{
-//     let mut context_bytes = message.context.into_bytes();
-//     FieldElement;
-// }
-
 impl RSignature {
     // Given a secret key, a message of length n, and the parameters, output a signature and a
     // redacted message
