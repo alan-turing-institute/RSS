@@ -1,10 +1,9 @@
 use crate::{SignatureGroup, VerkeyGroup};
+use amcl_wrapper::constants::FieldElement_SIZE;
 use amcl_wrapper::errors::SerzDeserzError;
 use amcl_wrapper::field_elem::FieldElement;
 use amcl_wrapper::group_elem::GroupElement;
-use core::slice::Iter;
 use itertools::Itertools;
-use std::iter::Rev;
 use thiserror::Error;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -20,10 +19,37 @@ pub struct Verkey {
 }
 
 /// Secret key consists of two random scalars x and y
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SKrss {
     pub x: FieldElement,
     pub y: FieldElement,
+}
+
+#[derive(Clone, Debug, Error)]
+pub enum SKrssError {
+    #[error("Wrapped SerzDeserzError: {0}")]
+    WrappedSerzDeserzError(SerzDeserzError),
+}
+
+impl From<SerzDeserzError> for SKrssError {
+    fn from(value: SerzDeserzError) -> Self {
+        SKrssError::WrappedSerzDeserzError(value)
+    }
+}
+
+impl SKrss {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut b = self.x.to_bytes();
+        b.extend(self.y.to_bytes());
+        b
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<SKrss, SKrssError> {
+        Ok(SKrss {
+            x: FieldElement::from_bytes(&bytes[0..FieldElement_SIZE])?,
+            y: FieldElement::from_bytes(&bytes[FieldElement_SIZE..bytes.len()])?,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -41,13 +67,25 @@ pub enum PKrssError {
     FailedParsingSignatureParts,
     #[error("Failed parsing Signature Group: {0}")]
     FailedParsingSignatureGroup(SerzDeserzError),
+    #[error("Failed parsing Verkey Group: {0}")]
+    FailedParsingVerkeyGroup(SerzDeserzError),
+    #[error("Unknown SerzDeserzError: {0}")]
+    UnknownSerzDeserzError(SerzDeserzError),
     #[error("Invalid length for byte encoded key, unable to seperate key components.")]
     KeyByteEncodingInvalidLength,
 }
 
 impl From<SerzDeserzError> for PKrssError {
     fn from(value: SerzDeserzError) -> Self {
-        PKrssError::FailedParsingSignatureGroup(value)
+        match value {
+            err @ SerzDeserzError::G1BytesIncorrectSize(_, _) => {
+                PKrssError::FailedParsingVerkeyGroup(err)
+            }
+            err @ SerzDeserzError::G2BytesIncorrectSize(_, _) => {
+                PKrssError::FailedParsingSignatureGroup(err)
+            }
+            err @ _ => PKrssError::UnknownSerzDeserzError(err),
+        }
     }
 }
 
@@ -377,6 +415,19 @@ mod tests {
         let se_pk = pk.to_hex();
         println!("{}", se_pk);
         let de_pk = PKrss::from_hex(&se_pk).unwrap();
+    }
+
+    #[test]
+    fn test_rsskey_sk_byte_conversion() {
+        // test a range of max idxs signable (count_msgs) with a different set of params each time
+        let count_msgs = [1_usize, 4, 5, 7, 8, 13, 17, 20];
+        for test in count_msgs {
+            let mut params = "test".as_bytes().to_vec();
+            params.push(test as u8);
+            let (sk, _) = rsskeygen(test, &Params::new(&params));
+            let bytes = sk.to_bytes();
+            assert_eq!(SKrss::from_bytes(&bytes).unwrap(), sk);
+        }
     }
 
     #[test]
