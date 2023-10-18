@@ -2,6 +2,9 @@ use crate::{SignatureGroup, VerkeyGroup};
 use amcl_wrapper::errors::SerzDeserzError;
 use amcl_wrapper::field_elem::FieldElement;
 use amcl_wrapper::group_elem::GroupElement;
+use core::slice::Iter;
+use itertools::Itertools;
+use std::iter::Rev;
 use thiserror::Error;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -23,7 +26,7 @@ pub struct SKrss {
     pub y: FieldElement,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PKrss {
     pub g: SignatureGroup,
     pub g_tilde: VerkeyGroup,
@@ -38,6 +41,8 @@ pub enum PKrssError {
     FailedParsingSignatureParts,
     #[error("Failed parsing Signature Group: {0}")]
     FailedParsingSignatureGroup(SerzDeserzError),
+    #[error("Invalid length for byte encoded key, unable to seperate key components.")]
+    KeyByteEncodingInvalidLength,
 }
 
 impl From<SerzDeserzError> for PKrssError {
@@ -46,7 +51,93 @@ impl From<SerzDeserzError> for PKrssError {
     }
 }
 
+fn key_length_to_count_messages(key_len: usize) -> Result<usize, PKrssError> {
+    if (key_len - 192 - 97 - 97 + 192) % (97 + 2 * 192) == 0 {
+        Ok((key_len - 192 - 97 - 97 + 192) / (97 + 2 * 192))
+    } else {
+        Err(PKrssError::KeyByteEncodingInvalidLength)
+    }
+}
+
+fn count_messages_to_key_lengths(count_msgs: usize) -> [usize; 5] {
+    [192, 97, 192 * (count_msgs * 2 - 1), 97, 97 * count_msgs]
+}
+
 impl PKrss {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let PKrss {
+            g,
+            g_tilde,
+            Y_i,
+            X_tilde,
+            Y_tilde_i,
+        } = self;
+        let mut b = g.to_bytes();
+        b.extend(g_tilde.to_bytes());
+        b.extend(
+            Y_i.iter()
+                .filter_map(|opt| {
+                    if let Some(g2) = opt {
+                        Some(g2.to_bytes())
+                    } else {
+                        None
+                    }
+                })
+                .flatten(),
+        );
+        b.extend(X_tilde.to_bytes());
+        b.extend(Y_tilde_i.iter().map(|g1| g1.to_bytes()).flatten());
+        b
+    }
+
+    pub fn from_bytes(pk: &[u8]) -> Result<PKrss, PKrssError> {
+        let infered_count_msgs = key_length_to_count_messages(pk.len())?;
+        let mut pk_vec = pk.to_vec();
+        pk_vec.reverse();
+        let mut split_points = count_messages_to_key_lengths(infered_count_msgs).to_vec();
+        split_points.reverse();
+
+        fn splitter(pk_vec: &mut Vec<u8>, split_points: &mut Vec<usize>) -> Vec<u8> {
+            let idx = split_points.pop().unwrap();
+            let mut split = pk_vec.split_off(pk_vec.len() - idx);
+            split.reverse();
+            split
+        }
+
+        let g = SignatureGroup::from_bytes(&splitter(&mut pk_vec, &mut split_points))?;
+        let g_tilde = VerkeyGroup::from_bytes(&splitter(&mut pk_vec, &mut split_points))?;
+        let Y_i_flat = splitter(&mut pk_vec, &mut split_points);
+        let X_tilde = VerkeyGroup::from_bytes(&splitter(&mut pk_vec, &mut split_points))?;
+        let Y_tilde_i_flat = splitter(&mut pk_vec, &mut split_points);
+
+        // unflatten Y_i and Y_tilde_i
+
+        let Y_tilde_i = Y_tilde_i_flat
+            .iter()
+            .chunks(97)
+            .into_iter()
+            .map(|chunk| VerkeyGroup::from_bytes(&chunk.cloned().collect_vec()))
+            .collect::<Result<Vec<VerkeyGroup>, SerzDeserzError>>()?;
+
+        let mut Y_i = Y_i_flat
+            .iter()
+            .chunks(2 * 97 - 2)
+            .into_iter()
+            .map::<Result<Option<SignatureGroup>, SerzDeserzError>, _>(|chunk| {
+                Some(SignatureGroup::from_bytes(&chunk.cloned().collect_vec())).transpose()
+            })
+            .collect::<Result<Vec<Option<SignatureGroup>>, SerzDeserzError>>()?;
+        Y_i.insert(infered_count_msgs, None);
+
+        Ok(PKrss {
+            g,
+            g_tilde,
+            Y_i,
+            X_tilde,
+            Y_tilde_i,
+        })
+    }
+
     pub fn to_hex(&self) -> String {
         let mut s = String::new();
         s += &(self.g.to_hex() + ":");
@@ -286,5 +377,75 @@ mod tests {
         let se_pk = pk.to_hex();
         println!("{}", se_pk);
         let de_pk = PKrss::from_hex(&se_pk).unwrap();
+    }
+
+    #[test]
+    fn test_rsskey_pk_byte_conversion() {
+        // test a range of max idxs signable (count_msgs) with a different set of params each time
+        let count_msgs = [1_usize, 4, 5, 7, 8, 13, 17, 20];
+        for test in count_msgs {
+            let mut params = "test".as_bytes().to_vec();
+            params.push(test as u8);
+            let (_, pk) = rsskeygen(test, &Params::new(&params));
+            let bytes = pk.to_bytes();
+            assert_eq!(PKrss::from_bytes(&bytes).unwrap(), pk);
+        }
+    }
+
+    #[test]
+    fn test_rsskey_pk_bytes() {
+        let count_msgs = 8;
+        let (_, pk) = rsskeygen(count_msgs, &Params::new("test".as_bytes()));
+        let PKrss {
+            g,
+            g_tilde,
+            Y_i,
+            X_tilde,
+            Y_tilde_i,
+        } = pk;
+
+        let mut b = g.to_bytes();
+        let len_g = b.len();
+        b.extend(g_tilde.to_bytes());
+        let len_g_tilde = b.len() - len_g;
+
+        b.extend(
+            Y_i.iter()
+                .filter_map(|opt| {
+                    if let Some(g2) = opt {
+                        Some(g2.to_bytes())
+                    } else {
+                        None
+                    }
+                })
+                .flatten(),
+        );
+        let len_y_i = b.len() - len_g - len_g_tilde;
+        b.extend(X_tilde.to_bytes());
+        let len_x_tilde = b.len() - len_g - len_g_tilde - len_y_i;
+        b.extend(Y_tilde_i.iter().map(|g1| g1.to_bytes()).flatten());
+        let len_y_tilde_i = b.len() - len_g - len_g_tilde - len_y_i - len_x_tilde;
+
+        let lengths = [len_g, len_g_tilde, len_y_i, len_x_tilde, len_y_tilde_i];
+        println!("{:?}", lengths);
+        // count_msgs: [g_len, g_tilde_len, Y_i_len, X_tilde_len, Y_tilde_i_len]
+        // 1: [192, 97, 192, 97, 97]
+        // 2: [192, 97, 576, 97, 194]
+        // 3: [192, 97, 960, 97, 291]
+        // 4: [192, 97, 1344, 97, 388]
+        // 5: [192, 97, 1728, 97, 485]
+        // 6: [192, 97, 2112, 97, 582]
+        // 15: [192, 97, 5568, 97, 1455]
+        // 20: [192, 97, 7488, 97, 1940]
+
+        // test helper functions which evaluate key component split points in the byte array
+        let infered_count_msgs = key_length_to_count_messages(b.len()).unwrap();
+        assert_eq!(infered_count_msgs, count_msgs);
+        assert_eq!(count_messages_to_key_lengths(infered_count_msgs), lengths);
+    }
+
+    #[test]
+    fn test_rsskey_sk_bytes() {
+        let (sk, _) = rsskeygen(3, &Params::new("test".as_bytes()));
     }
 }
