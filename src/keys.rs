@@ -494,9 +494,4 @@ mod tests {
         assert_eq!(infered_count_msgs, count_msgs);
         assert_eq!(count_messages_to_key_lengths(infered_count_msgs), lengths);
     }
-
-    #[test]
-    fn test_rsskey_sk_bytes() {
-        let (sk, _) = rsskeygen(3, &Params::new("test".as_bytes()));
-    }
 }
