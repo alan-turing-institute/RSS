@@ -3,8 +3,8 @@
 #[cfg(all(feature = "SignatureG2", feature = "SignatureG1"))]
 compile_error!("features `SignatureG2` and `SignatureG1` are mutually exclusive");
 
-#[macro_use]
-extern crate amcl_wrapper;
+// #[macro_use]
+pub extern crate amcl_wrapper;
 
 use amcl_wrapper::extension_field_gt::GT;
 
@@ -55,12 +55,14 @@ extern crate serde_derive;
 pub mod errors;
 #[macro_use]
 pub mod pok_vc;
-pub mod keys;
-pub mod pok_sig;
-pub mod signature;
 pub mod blind_signature;
+pub mod keys;
+pub mod message_structure;
 pub mod multi_signature;
-pub mod signature_2018;
+pub mod pok_sig;
 pub mod pok_sig_2018;
 pub mod rsssig;
-pub mod message_structure;
+pub mod signature;
+pub mod signature_2018;
+
+pub use amcl_wrapper::field_elem::FieldElement;

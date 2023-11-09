@@ -57,6 +57,8 @@ impl EncodedMessages {
     }
 }
 
+// This assumes that the Vec<String> follows a specific serialization scheme (the scheme used in the
+// canonical flatten macro).
 impl From<Vec<String>> for EncodedMessages {
     fn from(data: Vec<String>) -> Self {
         let mut idxs = Vec::new();

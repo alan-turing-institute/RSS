@@ -35,19 +35,13 @@ pub struct SKrss {
 pub enum SKrssError {
     #[error("Wrapped SerzDeserzError: {0}")]
     WrappedSerzDeserzError(SerzDeserzError),
-    #[error("Failed parsing hex string: {0}")]
-    FailedParsingHex(hex::FromHexError),
+    #[error(transparent)]
+    FailedParsingHex(#[from] hex::FromHexError),
 }
 
 impl From<SerzDeserzError> for SKrssError {
     fn from(value: SerzDeserzError) -> Self {
         SKrssError::WrappedSerzDeserzError(value)
-    }
-}
-
-impl From<hex::FromHexError> for SKrssError {
-    fn from(value: hex::FromHexError) -> Self {
-        SKrssError::FailedParsingHex(value)
     }
 }
 
